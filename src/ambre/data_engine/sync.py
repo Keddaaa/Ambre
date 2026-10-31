@@ -7,11 +7,10 @@ run reached a safe stopping point; otherwise the next run re-reads from the top,
 idempotent thanks to snapshot deduplication.
 
 Classification of a `Rejected` market:
-- ignored: valid but out of scope (`reason` starts with "unsupported ", e.g. non-BINARY outcomeType,
-  non cpmm-1 mechanism, CASH token) and both `outcome_type` and `market_id` are known. Stored via
-  `upsert_ignored` with its reason, never evaluated.
-- invalid: anything else (missing/invalid fields, no id, no outcomeType, no mechanism). Counted,
-  never stored, never fatal for the page.
+- `kind == "unsupported"`: well-formed but out of scope (non-BINARY outcomeType, non cpmm-1
+  mechanism, CASH token). Counted in `ignored`, stored in ignored_markets with its reason.
+- `kind == "invalid"`: missing/invalid data. Counted in `invalid`, never fatal for the page; stored
+  in ignored_markets with reason "invalid: ..." when the market has an id.
 """
 
 import logging
@@ -60,15 +59,6 @@ def _updated_ms(raw: dict[str, Any]) -> int | None:
     return int(value)
 
 
-def _is_ignored(raw: dict[str, Any], rejected: Rejected) -> bool:
-    return (
-        rejected.reason.startswith("unsupported ")
-        and rejected.market_id is not None
-        and rejected.outcome_type is not None
-        and raw.get("mechanism") is not None
-    )
-
-
 class MarketSyncService:
     def __init__(
         self,
@@ -81,13 +71,21 @@ class MarketSyncService:
         self._clock = clock
 
     async def sync(self, *, max_pages: int = 5, page_size: int = 1000) -> SyncReport:
+        """Run one sync pass.
+
+        Progress (`resume_cursor`, `pending_watermark_ms`) is committed with each page. If the pass
+        stops at `max_pages` before reaching the stored watermark, the next pass resumes from the
+        cursor; the watermark is promoted to the pending maximum only once the old watermark (or
+        the end of the listing) is reached. The first ever sync has no watermark to reach: its
+        bounded window of `max_pages` is accepted.
+        """
         report = SyncReport()
         with self._session_factory() as s:
             state = get_sync_state(s, SYNC_KEY)
             watermark = state.high_watermark_ms if state is not None else None
+            before = state.resume_cursor if state is not None else None
+            pending = state.pending_watermark_ms if state is not None else None
 
-        seen_max: int | None = None
-        before: str | None = None
         caught_up = False
         for _ in range(max_pages):
             try:
@@ -95,28 +93,31 @@ class MarketSyncService:
             except ManifoldError as exc:
                 return self._fail(report, str(exc))
             observed_at = self._clock()
-            self._store_page(page, observed_at, report)
-            report.pages += 1
-
             times = [t for t in (_updated_ms(m) for m in page) if t is not None]
             if times:
-                seen_max = max(times) if seen_max is None else max(seen_max, max(times))
-            if watermark is not None and any(t <= watermark for t in times):
-                caught_up = True
-            if caught_up or len(page) < page_size:
-                caught_up = True
-                break
-            last_id = page[-1].get("id")
-            if not isinstance(last_id, str):
+                pending = max(times) if pending is None else max(pending, max(times))
+            last_id = page[-1].get("id") if page else None
+            caught_up = (
+                len(page) < page_size
+                or watermark is not None
+                and any(t <= watermark for t in times)
+            )
+            if not caught_up and not isinstance(last_id, str):
                 return self._fail(report, "cannot paginate: last market of page has no id")
-            before = last_id
+            before = last_id if isinstance(last_id, str) else before
+            self._store_page(page, observed_at, report, before, pending)
+            report.pages += 1
+            if caught_up:
+                break
 
         if not caught_up and watermark is not None:
-            # Markets between the old watermark and the oldest page read were not reached:
-            # advancing would skip them for good.
-            return self._fail(report, "max_pages reached before the watermark; not advancing")
+            return self._fail(
+                report,
+                "catch-up in progress: max_pages reached before the watermark; "
+                "watermark not advanced, will resume from cursor",
+            )
 
-        new_mark = watermark if seen_max is None else max(seen_max, watermark or seen_max)
+        new_mark = pending if watermark is None else max(watermark, pending or watermark)
         now = self._clock()
         with self._session_factory.begin() as s:
             save_sync_state(
@@ -131,7 +132,7 @@ class MarketSyncService:
         return report
 
     def _fail(self, report: SyncReport, message: str) -> SyncReport:
-        """Record the error but leave watermark and last_success_at untouched."""
+        """Record the error but leave watermark, last_success_at and catch-up progress alone."""
         report.completed = False
         report.error = message
         with self._session_factory.begin() as s:
@@ -143,12 +144,19 @@ class MarketSyncService:
                 last_success_at=state.last_success_at if state else None,
                 last_error=message,
                 updated_at=self._clock(),
+                resume_cursor=state.resume_cursor if state else None,
+                pending_watermark_ms=state.pending_watermark_ms if state else None,
             )
         logger.warning("market sync incomplete: %s", message)
         return report
 
     def _store_page(
-        self, page: list[dict[str, Any]], observed_at: datetime, report: SyncReport
+        self,
+        page: list[dict[str, Any]],
+        observed_at: datetime,
+        report: SyncReport,
+        cursor: str | None,
+        pending: int | None,
     ) -> None:
         counts = SyncReport()
         with self._session_factory.begin() as s:
@@ -156,22 +164,41 @@ class MarketSyncService:
             for raw in page:
                 result = map_market(raw, observed_at, SOURCE_ID)
                 if isinstance(result, Rejected):
-                    if _is_ignored(raw, result):
-                        assert result.market_id is not None and result.outcome_type is not None
-                        upsert_ignored(
-                            s, result.market_id, result.outcome_type, result.reason, observed_at
-                        )
-                        counts.ignored += 1
-                    else:
-                        counts.invalid += 1
-                        logger.info("invalid market %s: %s", result.market_id, result.reason)
+                    self._store_rejection(s, result, observed_at, counts)
                     continue
                 self._store_market(s, result, raw, observed_at, ingested_at, counts)
+            state = get_sync_state(s, SYNC_KEY)
+            save_sync_state(
+                s,
+                SYNC_KEY,
+                high_watermark_ms=state.high_watermark_ms if state else None,
+                last_success_at=state.last_success_at if state else None,
+                last_error=state.last_error if state else None,
+                updated_at=ingested_at,
+                resume_cursor=cursor,
+                pending_watermark_ms=pending,
+            )
         report.stored_markets += counts.stored_markets
         report.new_snapshots += counts.new_snapshots
         report.duplicate_snapshots += counts.duplicate_snapshots
         report.ignored += counts.ignored
         report.invalid += counts.invalid
+
+    @staticmethod
+    def _store_rejection(
+        s: Session, rejected: Rejected, observed_at: datetime, counts: SyncReport
+    ) -> None:
+        if rejected.kind == "unsupported":
+            counts.ignored += 1
+            reason = rejected.reason
+        else:
+            counts.invalid += 1
+            reason = f"invalid: {rejected.reason}"
+            logger.info("invalid market %s: %s", rejected.market_id, rejected.reason)
+        if rejected.market_id is not None:
+            upsert_ignored(
+                s, rejected.market_id, rejected.outcome_type or "UNKNOWN", reason, observed_at
+            )
 
     @staticmethod
     def _store_market(

@@ -85,6 +85,8 @@ class SyncStateRow(Base):
     high_watermark_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    resume_cursor: Mapped[str | None] = mapped_column(String, nullable=True)
+    pending_watermark_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime)
 
 

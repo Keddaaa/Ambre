@@ -73,6 +73,8 @@ def upgrade() -> None:
         sa.Column("high_watermark_ms", sa.BigInteger(), nullable=True),
         sa.Column("last_success_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_error", sa.String(), nullable=True),
+        sa.Column("resume_cursor", sa.String(), nullable=True),
+        sa.Column("pending_watermark_ms", sa.BigInteger(), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("key"),
     )

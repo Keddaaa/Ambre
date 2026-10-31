@@ -32,6 +32,7 @@ def test_map_real_page_binary_only() -> None:
             assert isinstance(result, Rejected)
             assert result.reason == f"unsupported outcomeType: {raw['outcomeType']}"
             assert result.outcome_type == raw["outcomeType"]
+            assert result.kind == "unsupported"
             assert result.market_id == raw["id"]
     rejected_types = {r.outcome_type for r in results if isinstance(r, Rejected)}
     assert {"MULTIPLE_CHOICE", "PERP"} <= rejected_types
@@ -72,6 +73,7 @@ def test_map_missing_pool_rejected() -> None:
     assert isinstance(result, Rejected)
     assert result.market_id == "synth_no_pool"
     assert "pool" in result.reason
+    assert result.kind == "invalid"
     assert result.outcome_type == "BINARY"
 
 
@@ -94,6 +96,7 @@ def test_map_cash_token_rejected() -> None:
     result = map_market(_synthetic("synth_cash_token"), OBSERVED, SOURCE)
     assert isinstance(result, Rejected)
     assert result.reason == "unsupported token: CASH"
+    assert result.kind == "unsupported"
 
 
 def test_map_wrong_mechanism_rejected() -> None:
@@ -102,6 +105,7 @@ def test_map_wrong_mechanism_rejected() -> None:
     result = map_market(raw, OBSERVED, SOURCE)
     assert isinstance(result, Rejected)
     assert result.reason == "unsupported mechanism: dpm-2"
+    assert result.kind == "unsupported"
 
 
 @pytest.mark.parametrize("field", ["id", "question", "createdTime", "p", "probability"])

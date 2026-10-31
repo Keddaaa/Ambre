@@ -206,7 +206,12 @@ async def test_invalid_market_counted_not_fatal(factory: sessionmaker[Session]) 
     assert report.invalid == 2
     assert report.stored_markets == 19
     assert report.ignored == 32
-    assert count(factory, IgnoredMarketRow) == 32  # invalid ones are not stored as ignored
+    with factory() as s:
+        invalid_rows = s.scalars(
+            select(IgnoredMarketRow).where(IgnoredMarketRow.reason.like("invalid: %"))
+        ).all()
+    assert {r.market_id for r in invalid_rows} == {binary[0]["id"], binary[1]["id"]}
+    assert count(factory, IgnoredMarketRow) == 34
 
 
 async def test_snapshot_without_event_at_dedup_by_values(factory: sessionmaker[Session]) -> None:
@@ -248,3 +253,88 @@ async def test_max_pages_truncation_does_not_advance_existing_watermark(
     with factory() as s:
         state = get_sync_state(s, "markets")
         assert state is not None and state.high_watermark_ms == mark
+
+
+def _backlog(n: int, base_ms: int, prefix: str = "backlog") -> list[dict[str, Any]]:
+    template = next(m for m in load("markets_updated_page.json") if m["outcomeType"] == "BINARY")
+    out = []
+    for i in range(n):
+        m = copy.deepcopy(template)
+        m["id"] = f"{prefix}{i:03d}"
+        m["lastUpdatedTime"] = base_ms + i
+        out.append(m)
+    return out
+
+
+async def test_catch_up_converges_over_runs(factory: sessionmaker[Session]) -> None:
+    old = _backlog(5, 1_000, "old")
+    client = FakeClient(old)
+    await make(factory, client).sync(max_pages=5, page_size=10)
+    w = 1_004
+    backlog = _backlog(25, 10_000)
+    client.markets = old + backlog
+    svc = make(factory, client)
+
+    first = await svc.sync(max_pages=1, page_size=10)
+    assert first.completed is False and "catch-up" in (first.error or "")
+    second = await svc.sync(max_pages=1, page_size=10)
+    assert second.completed is False
+    with factory() as s:
+        state = get_sync_state(s, "markets")
+        assert state is not None
+        assert state.high_watermark_ms == w
+        assert state.resume_cursor is not None
+        assert state.pending_watermark_ms == 10_024
+    third = await svc.sync(max_pages=1, page_size=10)
+    assert third.completed is True and third.error is None
+    with factory() as s:
+        state = get_sync_state(s, "markets")
+        assert state is not None
+        assert state.high_watermark_ms == 10_024
+        assert state.resume_cursor is None and state.pending_watermark_ms is None
+        assert state.last_success_at is not None and state.last_error is None
+    assert count(factory, MarketRow) == 30
+
+
+async def test_update_during_catch_up_picked_up_by_next_fresh_run(
+    factory: sessionmaker[Session],
+) -> None:
+    old = _backlog(5, 1_000, "old")
+    client = FakeClient(old)
+    await make(factory, client).sync(max_pages=5, page_size=10)
+    backlog = _backlog(25, 10_000)
+    client.markets = old + backlog
+    svc = make(factory, client)
+    await svc.sync(max_pages=1, page_size=10)
+    # A market on the already-read pages is updated mid catch-up.
+    backlog[-1]["lastUpdatedTime"] = 50_000
+    backlog[-1]["probability"] = 0.31
+    for _ in range(2):
+        await svc.sync(max_pages=1, page_size=10)
+    with factory() as s:
+        state = get_sync_state(s, "markets")
+        assert state is not None and state.high_watermark_ms == 10_024
+    fresh = await svc.sync(max_pages=1, page_size=10)
+    assert fresh.completed is True
+    assert fresh.new_snapshots == 1
+    with factory() as s:
+        state = get_sync_state(s, "markets")
+        assert state is not None and state.high_watermark_ms == 50_000
+
+
+async def test_failure_mid_catch_up_keeps_committed_cursor(
+    factory: sessionmaker[Session],
+) -> None:
+    old = _backlog(5, 1_000, "old")
+    client = FakeClient(old)
+    await make(factory, client).sync(max_pages=5, page_size=10)
+    client.markets = old + _backlog(25, 10_000)
+    client.calls.clear()
+    client.fail_on_call = 2
+    report = await make(factory, client).sync(max_pages=3, page_size=10)
+    assert report.completed is False and report.pages == 1
+    with factory() as s:
+        state = get_sync_state(s, "markets")
+        assert state is not None
+        assert state.high_watermark_ms == 1_004
+        assert state.resume_cursor is not None

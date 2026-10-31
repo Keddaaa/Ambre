@@ -85,6 +85,8 @@ def save_sync_state(
     last_success_at: datetime | None,
     last_error: str | None,
     updated_at: datetime,
+    resume_cursor: str | None = None,
+    pending_watermark_ms: int | None = None,
 ) -> SyncStateRow:
     row = session.get(SyncStateRow, key)
     if row is None:
@@ -93,6 +95,8 @@ def save_sync_state(
     row.high_watermark_ms = high_watermark_ms
     row.last_success_at = last_success_at
     row.last_error = last_error
+    row.resume_cursor = resume_cursor
+    row.pending_watermark_ms = pending_watermark_ms
     row.updated_at = updated_at
     session.flush()
     return row

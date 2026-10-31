@@ -3,7 +3,7 @@
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
@@ -21,6 +21,9 @@ class Rejected:
     market_id: str | None
     reason: str
     outcome_type: str | None
+    # "unsupported": a well-formed market outside v0.1 scope (outcomeType, mechanism, token).
+    # "invalid": missing or malformed data.
+    kind: Literal["unsupported", "invalid"]
 
 
 class _Invalid(Exception):
@@ -139,18 +142,23 @@ def map_market(
     raw_type = raw.get("outcomeType")
     outcome_type = raw_type if isinstance(raw_type, str) else None
 
-    def reject(reason: str) -> Rejected:
-        return Rejected(market_id=market_id, reason=reason, outcome_type=outcome_type)
+    def reject(kind: Literal["unsupported", "invalid"], reason: str) -> Rejected:
+        return Rejected(market_id=market_id, reason=reason, outcome_type=outcome_type, kind=kind)
 
+    if outcome_type is None:
+        return reject("invalid", f"invalid outcomeType: {raw_type!r}")
     if outcome_type != "BINARY":
-        return reject(f"unsupported outcomeType: {raw_type}")
-    if raw.get("mechanism") != "cpmm-1":
-        return reject(f"unsupported mechanism: {raw.get('mechanism')}")
+        return reject("unsupported", f"unsupported outcomeType: {raw_type}")
+    mechanism = raw.get("mechanism")
+    if mechanism is None:
+        return reject("invalid", "missing required field: mechanism")
+    if mechanism != "cpmm-1":
+        return reject("unsupported", f"unsupported mechanism: {mechanism}")
     if raw.get("token") == "CASH":
-        return reject("unsupported token: CASH")
+        return reject("unsupported", "unsupported token: CASH")
     try:
         return _build(raw, observed_at, source_id)
     except _Invalid as exc:
-        return reject(str(exc))
+        return reject("invalid", str(exc))
     except ValidationError as exc:
-        return reject(f"validation error: {exc.errors(include_url=False)}")
+        return reject("invalid", f"validation error: {exc.errors(include_url=False)}")
