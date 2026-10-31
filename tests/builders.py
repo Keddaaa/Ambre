@@ -1,11 +1,18 @@
 """Synthetic domain-object builders for pure-core tests (no Manifold data involved)."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from fakes import FakeManifoldClient
+from sqlalchemy.orm import Session, sessionmaker
+
+from ambre.config.settings import Settings
+from ambre.data_engine.sync import MarketSyncService
 from ambre.domain.models import (
     BinaryMarket,
     Estimate,
+    ExecutionMode,
     MarketSnapshot,
     Proposal,
     Side,
@@ -13,6 +20,7 @@ from ambre.domain.models import (
     SurvivalState,
 )
 from ambre.feature_engine.features import FeatureVector
+from ambre.pipeline import CycleReport, run_cycle
 from ambre.risk_engine.risk import PortfolioView
 
 NOW = datetime(2026, 10, 31, 12, 0, tzinfo=UTC)
@@ -110,3 +118,24 @@ def balanced() -> SurvivalAssessment:
     return SurvivalAssessment(
         state=SurvivalState.BALANCED, stake_multiplier=1.0, allow_new_positions=True, reasons=[]
     )
+
+
+# --- pipeline helpers shared by the e2e and API tests
+T_SYNC = datetime(2026, 10, 31, 14, 5, tzinfo=UTC)  # just after the fixture's last update
+T_CYCLE = T_SYNC + timedelta(minutes=1)
+SETTINGS = Settings(database_url="sqlite://", execution_mode=ExecutionMode.PAPER)
+
+
+def sync(factory: sessionmaker[Session], markets: list[dict[str, Any]], at: datetime) -> None:
+    service = MarketSyncService(FakeManifoldClient(markets), factory, lambda: at)  # type: ignore[arg-type]
+    report = asyncio.run(service.sync(max_pages=5, page_size=1000))
+    assert report.completed and report.new_snapshots > 0
+
+
+def cycle(
+    factory: sessionmaker[Session], now: datetime = T_CYCLE, settings: Settings = SETTINGS
+) -> CycleReport:
+    with factory() as s:
+        report = run_cycle(s, settings, now)
+        s.commit()
+    return report

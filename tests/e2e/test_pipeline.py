@@ -1,18 +1,16 @@
 """End-to-end paper cycle: fake Manifold client on the real fixture, SQLite, fixed clock."""
 
-import asyncio
 import copy
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
-from fakes import FakeManifoldClient, load_fixture
+from builders import SETTINGS, T_CYCLE, T_SYNC, cycle, sync
+from fakes import load_fixture
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from ambre.config.settings import Settings
-from ambre.data_engine.sync import MarketSyncService
 from ambre.domain.models import (
     Action,
     ExecutionMode,
@@ -35,15 +33,11 @@ from ambre.infrastructure.orm import (
     PositionRow,
     SimulationRow,
 )
-from ambre.pipeline import CycleReport, run_cycle
+from ambre.pipeline import CycleReport
 from ambre.portfolio.service import PortfolioService, create_simulation
 from ambre.risk_engine.risk import RiskEngine
 from ambre.value_engine.cpmm import cpmm_fill
 from ambre.value_engine.value import assess_fill
-
-T_SYNC = datetime(2026, 10, 31, 14, 5, tzinfo=UTC)  # just after the fixture's last update
-T_CYCLE = T_SYNC + timedelta(minutes=1)
-SETTINGS = Settings(database_url="sqlite://", execution_mode=ExecutionMode.PAPER)
 
 
 def ms(at: datetime) -> int:
@@ -56,21 +50,6 @@ def factory() -> Iterator[sessionmaker[Session]]:
     Base.metadata.create_all(engine)
     yield make_session_factory(engine)
     engine.dispose()
-
-
-def sync(factory: sessionmaker[Session], markets: list[dict[str, Any]], at: datetime) -> None:
-    service = MarketSyncService(FakeManifoldClient(markets), factory, lambda: at)  # type: ignore[arg-type]
-    report = asyncio.run(service.sync(max_pages=5, page_size=1000))
-    assert report.completed and report.new_snapshots > 0
-
-
-def cycle(
-    factory: sessionmaker[Session], now: datetime = T_CYCLE, settings: Settings = SETTINGS
-) -> CycleReport:
-    with factory() as s:
-        report = run_cycle(s, settings, now)
-        s.commit()
-    return report
 
 
 def count(factory: sessionmaker[Session], model: Any) -> int:

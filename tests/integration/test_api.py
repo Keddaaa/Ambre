@@ -1,14 +1,13 @@
 """Read API + emergency halt endpoints, on a DB populated by run_cycle from the real fixture."""
 
-import sys
 from collections.abc import Iterator
 from datetime import timedelta
-from pathlib import Path
 
 import pytest
+from builders import SETTINGS, T_CYCLE, T_SYNC, cycle, sync
 from fakes import load_fixture
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from ambre.api.app import create_app
@@ -16,10 +15,15 @@ from ambre.config.settings import Settings
 from ambre.domain.models import SimulationStatus
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.db import make_engine, make_session_factory
-from ambre.infrastructure.orm import Base, DecisionRow, MarketRow, SimulationRow
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "e2e"))  # reuse e2e helpers
-from test_pipeline import SETTINGS, T_CYCLE, T_SYNC, cycle, sync  # noqa: E402
+from ambre.infrastructure.orm import (
+    Base,
+    DecisionRow,
+    LedgerRow,
+    MarketRow,
+    PositionRow,
+    SimulationRow,
+    SnapshotRow,
+)
 
 NOW = T_CYCLE + timedelta(minutes=4)
 
@@ -178,7 +182,27 @@ def test_portfolio_values_add_up(populated: sessionmaker[Session]) -> None:
     assert body["simulation"]["initial_capital"] == 1000.0
     assert body["exposure_known"] is True
     assert body["total_value_is_lower_bound"] is False
-    assert body["cash"] + body["positions_value"] == pytest.approx(body["total_value"])
+    # Independent expectation from raw DB rows (not the endpoint's arithmetic).
+    with populated() as s:
+        cash = s.scalar(select(func.sum(LedgerRow.amount)))
+        expected = 0.0
+        by_market = {}
+        for pos in s.scalars(select(PositionRow).where(PositionRow.status == "OPEN")):
+            snap = s.scalars(
+                select(SnapshotRow)
+                .where(SnapshotRow.market_id == pos.market_id)
+                .order_by(SnapshotRow.observed_at.desc(), SnapshotRow.id.desc())
+            ).first()
+            assert snap is not None
+            price = snap.probability if pos.side == "YES" else 1.0 - snap.probability
+            by_market[pos.market_id] = pos.shares * price
+            expected += pos.shares * price
+    assert body["cash"] == pytest.approx(cash)
+    assert body["positions_value"] == pytest.approx(expected)
+    assert body["total_value"] == pytest.approx(cash + expected)
+    assert sum(p["current_value"] for p in body["open_positions"]) == pytest.approx(expected)
+    for p in body["open_positions"]:
+        assert p["current_value"] == pytest.approx(by_market[p["market_id"]])
     assert body["peak_value"] >= body["total_value"] - 1e-9
     assert body["survival_state"] == "BALANCED"
     assert len(body["open_positions"]) > 0
@@ -238,9 +262,25 @@ def test_halt_then_resume(populated: sessionmaker[Session]) -> None:
     with populated() as s:  # committed, visible from a fresh session
         row = repo.get_control(s)
         assert row is not None and row.halted
-    r = c.post("/control/resume")
+    r = c.post("/control/resume", json={"confirm": True})
     assert r.json()["halted"] is False and r.json()["reason"] is None
     assert c.get("/system").json()["halted"] is False
+
+
+def test_resume_rejects_non_json_and_keeps_halt(populated: sessionmaker[Session]) -> None:
+    c = client_for(populated)
+    c.post("/control/halt", json={"reason": "manual check"})
+    for kwargs in (
+        {},  # empty body
+        {"content": "", "headers": {"content-type": "text/plain"}},
+        {"content": '{"confirm": true}', "headers": {"content-type": "text/plain"}},
+        {"json": {"confirm": False}},
+        {"json": {}},
+    ):
+        r = c.post("/control/resume", **kwargs)  # type: ignore[arg-type]
+        assert r.status_code in (415, 422), kwargs
+        assert c.get("/system").json()["halted"] is True
+    assert c.post("/control/resume", json={"confirm": True}).json()["halted"] is False
 
 
 def test_halt_requires_reason(populated: sessionmaker[Session]) -> None:
@@ -248,6 +288,8 @@ def test_halt_requires_reason(populated: sessionmaker[Session]) -> None:
     assert c.post("/control/halt", json={"reason": "ab"}).status_code == 422
     assert c.post("/control/halt", json={}).status_code == 422
     assert c.post("/control/halt").status_code == 422
+    assert c.post("/control/halt", json={"reason": "   "}).status_code == 422
+    assert c.post("/control/halt", json={"reason": " ab "}).status_code == 422
 
 
 def test_no_endpoint_changes_execution_mode() -> None:

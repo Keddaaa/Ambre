@@ -1,6 +1,7 @@
 """Pydantic response/request models of the read API. Nullable DB columns stay Optional."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -168,7 +169,15 @@ class PortfolioPointOut(_Out):
 
 
 class HaltIn(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     reason: str = Field(min_length=3, max_length=500)
+
+
+class ResumeIn(BaseModel):
+    """Explicit body so resume is never a CORS "simple" request (JSON content type needed)."""
+
+    confirm: Literal[True]
 
 
 class ControlOut(_Out):

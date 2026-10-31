@@ -91,15 +91,9 @@ class PortfolioService:
                 open_market_ids=frozenset(),
                 exposure_known=False,
             )
-        known = True
-        positions_value = 0.0
-        for pos in positions:
-            p_yes = latest_prob.get(pos.market_id)
-            if p_yes is None or not _valid_probability(p_yes):
-                known = False
-                continue
-            price = p_yes if pos.side == Side.YES.value else 1.0 - p_yes
-            positions_value += pos.shares * price
+        valued = self.position_values(latest_prob, positions)
+        known = all(v is not None for _, _, v in valued)
+        positions_value = sum(v for _, _, v in valued if v is not None)
         return PortfolioView(
             cash=cash,
             total_value=cash + positions_value,
@@ -107,6 +101,24 @@ class PortfolioService:
             open_market_ids=frozenset(p.market_id for p in positions),
             exposure_known=known,
         )
+
+    def position_values(
+        self, latest_prob: Mapping[str, float], positions: list[PositionRow] | None = None
+    ) -> list[tuple[PositionRow, float | None, float | None]]:
+        """(position, price of its side, shares * price) per open position.
+
+        Price and value are None when the market has no valid P(YES). This is the
+        single valuation rule shared by ``view`` and the API.
+        """
+        out: list[tuple[PositionRow, float | None, float | None]] = []
+        for pos in self.open_positions() if positions is None else positions:
+            p_yes = latest_prob.get(pos.market_id)
+            if p_yes is None or not _valid_probability(p_yes):
+                out.append((pos, None, None))
+                continue
+            price = p_yes if pos.side == Side.YES.value else 1.0 - p_yes
+            out.append((pos, price, pos.shares * price))
+        return out
 
     def record_snapshot(
         self, view: PortfolioView, peak: float, survival: SurvivalAssessment, now: datetime

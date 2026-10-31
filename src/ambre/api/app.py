@@ -202,40 +202,36 @@ def create_app(
             snap = repo.latest_snapshot_for_market(session, pos.market_id)
             if snap is not None:
                 prices[pos.market_id] = snap.probability
-        view = svc.view(prices)
+        valued = svc.position_values(prices, positions)
+        cash = svc.cash()
+        positions_value = sum(v for _, _, v in valued if v is not None)
+        total_value = cash + positions_value
+        exposure_known = all(v is not None for _, _, v in valued)
         questions = questions_for(session, {p.market_id for p in positions})
-        items = []
-        for pos in positions:
-            p_yes = prices.get(pos.market_id)
-            valid = p_yes is not None and 0.0 <= p_yes <= 1.0
-            price = (
-                (p_yes if pos.side == "YES" else 1.0 - p_yes)
-                if valid and p_yes is not None
-                else None
+        items = [
+            sc.PositionOut(
+                market_id=pos.market_id,
+                question=questions.get(pos.market_id),
+                side=pos.side,
+                shares=pos.shares,
+                cost=pos.cost,
+                opened_at=pos.opened_at,
+                current_price=price,
+                current_value=value,
             )
-            items.append(
-                sc.PositionOut(
-                    market_id=pos.market_id,
-                    question=questions.get(pos.market_id),
-                    side=pos.side,
-                    shares=pos.shares,
-                    cost=pos.cost,
-                    opened_at=pos.opened_at,
-                    current_price=price,
-                    current_value=pos.shares * price if price is not None else None,
-                )
-            )
-        peak = max(svc.peak_value(), view.total_value)
+            for pos, price, value in valued
+        ]
+        peak = max(svc.peak_value(), total_value)
         snap_row = repo.latest_portfolio_snapshot(session, sim.id)
         return sc.PortfolioOut(
             simulation=sc.SimulationOut.model_validate(sim),
-            cash=view.cash,
-            positions_value=view.total_value - view.cash,
-            total_value=view.total_value,
-            exposure_known=view.exposure_known,
-            total_value_is_lower_bound=not view.exposure_known,
+            cash=cash,
+            positions_value=positions_value,
+            total_value=total_value,
+            exposure_known=exposure_known,
+            total_value_is_lower_bound=not exposure_known,
             peak_value=peak,
-            drawdown=max(0.0, 1.0 - view.total_value / peak) if view.exposure_known else None,
+            drawdown=max(0.0, 1.0 - total_value / peak) if exposure_known else None,
             survival_state=snap_row.survival_state if snap_row else None,
             survival_reasons=list(snap_row.survival_reasons) if snap_row else [],
             open_positions=items,
@@ -254,7 +250,7 @@ def create_app(
         return sc.ControlOut.model_validate(row)
 
     @app.post("/control/resume", response_model=sc.ControlOut)
-    def resume(session: Db) -> sc.ControlOut:
+    def resume(body: sc.ResumeIn, session: Db) -> sc.ControlOut:
         row = repo.set_control(session, halted=False, reason=None, updated_at=clock())
         session.commit()
         return sc.ControlOut.model_validate(row)
