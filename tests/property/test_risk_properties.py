@@ -1,3 +1,5 @@
+import math
+
 from builders import make_proposal, make_snapshot
 from hypothesis import event, given, settings
 from hypothesis import strategies as st
@@ -131,3 +133,58 @@ def test_survival_state_is_reachable(total, peak, initial, age, known, halted):
     if a.state in {SurvivalState.HALTED, SurvivalState.OBSERVING, SurvivalState.CRITICAL}:
         assert not a.allow_new_positions
         assert a.stake_multiplier == 0.0
+
+
+# Non-finite inputs: NaN and ±inf must never slip past a cap or a survival rule.
+wild = st.floats(allow_nan=True, allow_infinity=True)
+# Mostly plausible values with frequent non-finite ones, so that approvals stay reachable.
+mixed = st.sampled_from([math.nan, math.inf, -math.inf]) | st.floats(min_value=1, max_value=1e5)
+wild_portfolios = st.builds(
+    PortfolioView,
+    cash=mixed,
+    total_value=mixed,
+    open_exposure=mixed | st.just(0.0),
+    open_market_ids=st.just(frozenset()),
+    exposure_known=st.just(True),
+)
+wild_proposals = st.builds(
+    lambda stake, side, p_cons: make_proposal(side=side, p_cons=p_cons).model_copy(
+        update={"stake": stake}
+    ),
+    stake=mixed,
+    side=st.sampled_from([Side.YES, Side.NO]),
+    p_cons=st.floats(min_value=0.001, max_value=0.999),
+)
+
+
+@settings(max_examples=500)
+@given(wild_proposals, deep_snapshots, wild_portfolios, open_survivals)
+def test_risk_verdict_invariants_non_finite(proposal, snap, portfolio, survival):
+    verdict, _ = ENGINE.evaluate(proposal, snap, portfolio, survival)
+    assert math.isfinite(verdict.stake)
+    _check_invariants(proposal, snap, portfolio, survival)
+
+
+@given(
+    total=wild,
+    peak=wild,
+    initial=wild,
+    age=st.none() | wild,
+    known=st.booleans(),
+    halted=st.booleans(),
+)
+def test_survival_non_finite_inputs(total, peak, initial, age, known, halted):
+    inp = SurvivalInputs(total, peak, initial, age, known, halted)
+    try:
+        a = assess_survival(inp, SurvivalConfig(), RiskConfig())
+    except ValueError:
+        # Only finite but non-positive reference values may raise.
+        assert math.isfinite(peak) and math.isfinite(initial)
+        assert peak <= 0 or initial <= 0
+        return
+    assert a.state in REACHABLE
+    finite = all(math.isfinite(x) for x in (total, peak, initial))
+    if not finite:
+        assert a.state is SurvivalState.HALTED
+    if a.allow_new_positions:
+        assert finite and age is not None and math.isfinite(age)

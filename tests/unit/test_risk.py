@@ -104,3 +104,59 @@ def test_risk_turns_cpmm_error_into_rejection():
     assert not verdict.approved
     assert fv is None
     assert any("fill simulation failed" in r for r in verdict.reasons)
+
+
+NAN, INF = float("nan"), float("inf")
+
+
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"total_value": NAN},
+        {"total_value": INF},
+        {"total_value": 0.0},
+        {"total_value": -10.0},
+        {"cash": NAN},
+        {"cash": INF},
+        {"open_exposure": NAN},
+        {"open_exposure": -INF},
+    ],
+)
+def test_risk_rejects_non_finite_portfolio(kw):
+    verdict, fv = ENGINE.evaluate(make_proposal(stake=40), DEEP, make_portfolio(**kw), balanced())
+    assert not verdict.approved
+    assert verdict.stake == 0
+    assert fv is None
+    assert any("invalid portfolio valuation" in r for r in verdict.reasons)
+
+
+@pytest.mark.parametrize("stake", [NAN, INF])
+def test_risk_rejects_non_finite_proposal_stake(stake):
+    proposal = make_proposal().model_copy(update={"stake": stake})
+    verdict, fv = ENGINE.evaluate(proposal, DEEP, make_portfolio(), balanced())
+    assert not verdict.approved
+    assert verdict.stake == 0
+    assert fv is None
+    assert any("non-finite proposal stake" in r for r in verdict.reasons)
+
+
+FEE_ENGINE = RiskEngine(RiskConfig(fee_rate=0.05))
+
+
+def test_risk_caps_fee_inclusive_cost_to_cash():
+    verdict, fv = FEE_ENGINE.evaluate(
+        make_proposal(stake=40), DEEP, make_portfolio(cash=10.5), balanced()
+    )
+    assert verdict.approved
+    assert verdict.stake == pytest.approx(10.0)
+    assert fv is not None
+    assert fv.cost == pytest.approx(10.5)
+
+
+def test_risk_caps_fee_inclusive_cost_to_exposure_room():
+    portfolio = make_portfolio(open_exposure=189.5)  # room 10.5
+    verdict, fv = FEE_ENGINE.evaluate(make_proposal(stake=40), DEEP, portfolio, balanced())
+    assert verdict.approved
+    assert verdict.stake == pytest.approx(10.0)
+    assert fv is not None
+    assert portfolio.open_exposure + fv.cost <= 200 + 1e-9

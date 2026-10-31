@@ -80,3 +80,31 @@ def test_survival_rejects_invalid_reference_values():
         assess_survival(_inputs(peak_value=0.0), CFG, RISK)
     with pytest.raises(ValueError):
         assess_survival(_inputs(initial_capital=0.0), CFG, RISK)
+
+
+NAN, INF = float("nan"), float("inf")
+
+
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"total_value": NAN},
+        {"total_value": INF},
+        {"peak_value": NAN},
+        {"peak_value": INF},
+        {"initial_capital": NAN},
+        {"initial_capital": -INF},
+    ],
+)
+def test_survival_non_finite_valuation_halts(kw):
+    a = assess_survival(_inputs(**kw), CFG, RISK)
+    assert a.state is SurvivalState.HALTED
+    assert not a.allow_new_positions
+    assert "invalid portfolio valuation" in a.reasons
+
+
+@pytest.mark.parametrize("age", [NAN, INF])
+def test_survival_non_finite_data_age_observing(age):
+    a = assess_survival(_inputs(data_age_seconds=age), CFG, RISK)
+    assert a.state is SurvivalState.OBSERVING
+    assert not a.allow_new_positions

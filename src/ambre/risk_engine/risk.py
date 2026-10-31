@@ -1,5 +1,6 @@
 """Risk engine: caps and vetoes strategy proposals (pure, no I/O)."""
 
+import math
 from dataclasses import dataclass
 
 from ambre.config.settings import RiskConfig
@@ -44,15 +45,25 @@ class RiskEngine:
             reasons.append(f"market {proposal.market_id} already has an open position")
         if reasons:
             return _reject(reasons), None
+        # min() silently drops a NaN that is not its first argument and NaN
+        # comparisons are False, so non-finite inputs would bypass every cap.
+        values = (portfolio.cash, portfolio.total_value, portfolio.open_exposure)
+        if not all(math.isfinite(x) for x in values) or portfolio.total_value <= 0:
+            return _reject(
+                [f"invalid portfolio valuation (cash, value, exposure) = {values}"]
+            ), None
+        if not math.isfinite(proposal.stake):
+            return _reject([f"non-finite proposal stake {proposal.stake}"]), None
 
         v = portfolio.total_value
+        fee = 1 + cfg.fee_rate  # cash and exposure caps apply to the fee-inclusive cost
         stake = min(
             proposal.stake * survival.stake_multiplier,
             cfg.max_position_fraction * v,
-            portfolio.cash,
-            cfg.max_total_exposure_fraction * v - portfolio.open_exposure,
+            portfolio.cash / fee,
+            (cfg.max_total_exposure_fraction * v - portfolio.open_exposure) / fee,
         )
-        if not stake >= cfg.min_stake:  # also rejects NaN
+        if not (math.isfinite(stake) and stake >= cfg.min_stake):
             return _reject([f"stake {stake:.4f} below min stake {cfg.min_stake:g}"]), None
         if stake < proposal.stake:
             reasons.append(f"stake capped from {proposal.stake:.4f} to {stake:.4f}")
