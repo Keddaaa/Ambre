@@ -1,0 +1,265 @@
+"""Read API for the dashboard, plus the emergency halt / resume endpoints.
+
+The only write endpoints are POST /control/halt and /control/resume. No route can
+change the execution mode.
+"""
+
+from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
+from typing import Annotated, Literal
+
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.orm import Session, sessionmaker
+
+from ambre import __version__
+from ambre.api import schemas as sc
+from ambre.config.settings import Settings, get_settings
+from ambre.data_engine.sync import SYNC_KEY
+from ambre.domain.models import Action
+from ambre.infrastructure import repositories as repo
+from ambre.infrastructure.db import make_engine, make_session_factory
+from ambre.infrastructure.orm import DecisionRow, MarketRow
+from ambre.portfolio.service import PortfolioService
+
+NO_SIMULATION = "no active simulation; run `ambre cycle`"
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def create_app(
+    settings: Settings | None = None,
+    session_factory: sessionmaker[Session] | None = None,
+    clock: Callable[[], datetime] = _utc_now,
+) -> FastAPI:
+    cfg = settings or get_settings()
+    holder: dict[str, sessionmaker[Session]] = {}
+    if session_factory is not None:
+        holder["factory"] = session_factory
+
+    def factory() -> sessionmaker[Session]:
+        if "factory" not in holder:  # lazy: importing the module never touches the DB
+            holder["factory"] = make_session_factory(make_engine(cfg.database_url))
+        return holder["factory"]
+
+    def get_session() -> Iterator[Session]:
+        with factory()() as session:
+            yield session
+
+    Db = Annotated[Session, Depends(get_session)]
+
+    app = FastAPI(title="AMBRE API", version=__version__)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cfg.cors_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+    )
+
+    def current_sim_id(session: Session) -> str | None:
+        sim = repo.get_current_simulation(session)
+        return sim.id if sim else None
+
+    def decision_out(d: DecisionRow, questions: dict[str, str]) -> sc.DecisionOut:
+        out = sc.DecisionOut.model_validate(d)
+        out.market_question = questions.get(d.market_id)
+        return out
+
+    def questions_for(session: Session, ids: set[str]) -> dict[str, str]:
+        if not ids:
+            return {}
+        rows = session.query(MarketRow.id, MarketRow.question).filter(MarketRow.id.in_(ids))
+        return {i: q for i, q in rows}
+
+    @app.get("/health", response_model=sc.HealthOut)
+    def health() -> JSONResponse:
+        try:
+            with factory()() as session:
+                session.execute(text("SELECT 1"))
+            ok = True
+        except Exception:
+            ok = False
+        body = sc.HealthOut(status="ok" if ok else "degraded", db_ok=ok, version=__version__)
+        return JSONResponse(body.model_dump(), status_code=200 if ok else 503)
+
+    @app.get("/system", response_model=sc.SystemOut)
+    def system(session: Db) -> sc.SystemOut:
+        control = repo.get_control(session)
+        sync = repo.get_sync_state(session, SYNC_KEY)
+        last_ok = sync.last_success_at if sync else None
+        sim_id = current_sim_id(session)
+        last_cycle = repo.latest_portfolio_snapshot(session, sim_id) if sim_id else None
+        return sc.SystemOut(
+            execution_mode=cfg.execution_mode.value,
+            orders_enabled=cfg.enable_manifold_orders,
+            halted=control.halted if control else False,
+            halt_reason=control.reason if control else None,
+            last_sync_at=last_ok,
+            last_sync_error=sync.last_error if sync else None,
+            data_age_seconds=(clock() - last_ok).total_seconds() if last_ok else None,
+            last_cycle_at=last_cycle.at if last_cycle else None,
+            decisions_total=repo.count_decisions(session, sim_id) if sim_id else 0,
+            risk=cfg.risk,
+            survival=cfg.survival,
+        )
+
+    @app.get("/markets", response_model=sc.MarketsPage)
+    def markets(
+        session: Db,
+        status: Literal["open", "resolved", "all"] = "open",
+        q: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> sc.MarketsPage:
+        rows, total = repo.list_markets_filtered(
+            session, status=status, q=q, limit=limit, offset=offset
+        )
+        sim_id = current_sim_id(session)
+        latest = (
+            repo.latest_decisions_by_market(session, sim_id, [m.id for m in rows]) if sim_id else {}
+        )
+        items = []
+        for m in rows:
+            snap = repo.latest_snapshot_for_market(session, m.id)
+            d = latest.get(m.id)
+            items.append(
+                sc.MarketRowOut(
+                    id=m.id,
+                    question=m.question,
+                    url=m.url,
+                    close_at=m.close_at,
+                    is_resolved=m.is_resolved,
+                    resolution=m.resolution,
+                    probability=snap.probability if snap else None,
+                    total_liquidity=snap.total_liquidity if snap else None,
+                    unique_bettor_count=snap.unique_bettor_count if snap else None,
+                    observed_at=snap.observed_at if snap else None,
+                    ambre_estimate=d.estimated_probability if d else None,
+                    ambre_uncertainty=d.uncertainty if d else None,
+                    ambre_ev_per_mana=d.ev_per_mana if d else None,
+                    last_action=d.action if d else None,
+                )
+            )
+        return sc.MarketsPage(items=items, total=total)
+
+    @app.get("/markets/{market_id}", response_model=sc.MarketDetailOut)
+    def market_detail(market_id: str, session: Db) -> sc.MarketDetailOut:
+        market = repo.get_market_detail(session, market_id)
+        if market is None:
+            raise HTTPException(404, f"unknown market {market_id}")
+        sim_id = current_sim_id(session)
+        decisions: list[DecisionRow] = []
+        if sim_id:
+            decisions, _ = repo.list_decisions_filtered(
+                session, sim_id, market_id=market_id, limit=1000
+            )
+        return sc.MarketDetailOut(
+            market=sc.MarketOut.model_validate(market),
+            snapshots=[
+                sc.SnapshotOut.model_validate(s)
+                for s in repo.list_snapshots_for_market(session, market_id)
+            ],
+            decisions=[decision_out(d, {market_id: market.question}) for d in decisions],
+        )
+
+    @app.get("/decisions", response_model=sc.DecisionsPage)
+    def decisions(
+        session: Db,
+        action: Action | None = None,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> sc.DecisionsPage:
+        sim_id = current_sim_id(session)
+        if sim_id is None:
+            return sc.DecisionsPage(items=[], total=0)
+        rows, total = repo.list_decisions_filtered(
+            session,
+            sim_id,
+            action=action.value if action else None,
+            limit=limit,
+            offset=offset,
+        )
+        questions = questions_for(session, {d.market_id for d in rows})
+        return sc.DecisionsPage(items=[decision_out(d, questions) for d in rows], total=total)
+
+    def require_simulation(session: Session):  # type: ignore[no-untyped-def]
+        sim = repo.get_current_simulation(session)
+        if sim is None:
+            raise HTTPException(404, NO_SIMULATION)
+        return sim
+
+    @app.get("/portfolio", response_model=sc.PortfolioOut)
+    def portfolio(session: Db) -> sc.PortfolioOut:
+        sim = require_simulation(session)
+        svc = PortfolioService(session, sim.id)
+        positions = svc.open_positions()
+        prices: dict[str, float] = {}
+        for pos in positions:
+            snap = repo.latest_snapshot_for_market(session, pos.market_id)
+            if snap is not None:
+                prices[pos.market_id] = snap.probability
+        view = svc.view(prices)
+        questions = questions_for(session, {p.market_id for p in positions})
+        items = []
+        for pos in positions:
+            p_yes = prices.get(pos.market_id)
+            valid = p_yes is not None and 0.0 <= p_yes <= 1.0
+            price = (
+                (p_yes if pos.side == "YES" else 1.0 - p_yes)
+                if valid and p_yes is not None
+                else None
+            )
+            items.append(
+                sc.PositionOut(
+                    market_id=pos.market_id,
+                    question=questions.get(pos.market_id),
+                    side=pos.side,
+                    shares=pos.shares,
+                    cost=pos.cost,
+                    opened_at=pos.opened_at,
+                    current_price=price,
+                    current_value=pos.shares * price if price is not None else None,
+                )
+            )
+        peak = max(svc.peak_value(), view.total_value)
+        snap_row = repo.latest_portfolio_snapshot(session, sim.id)
+        return sc.PortfolioOut(
+            simulation=sc.SimulationOut.model_validate(sim),
+            cash=view.cash,
+            positions_value=view.total_value - view.cash,
+            total_value=view.total_value,
+            exposure_known=view.exposure_known,
+            total_value_is_lower_bound=not view.exposure_known,
+            peak_value=peak,
+            drawdown=max(0.0, 1.0 - view.total_value / peak) if view.exposure_known else None,
+            survival_state=snap_row.survival_state if snap_row else None,
+            survival_reasons=list(snap_row.survival_reasons) if snap_row else [],
+            open_positions=items,
+        )
+
+    @app.get("/portfolio/history", response_model=list[sc.PortfolioPointOut])
+    def portfolio_history(session: Db) -> list[sc.PortfolioPointOut]:
+        sim = require_simulation(session)
+        rows = repo.list_portfolio_snapshots(session, sim.id)  # all, ascending
+        return [sc.PortfolioPointOut.model_validate(r) for r in rows]
+
+    @app.post("/control/halt", response_model=sc.ControlOut)
+    def halt(body: sc.HaltIn, session: Db) -> sc.ControlOut:
+        row = repo.set_control(session, halted=True, reason=body.reason, updated_at=clock())
+        session.commit()
+        return sc.ControlOut.model_validate(row)
+
+    @app.post("/control/resume", response_model=sc.ControlOut)
+    def resume(session: Db) -> sc.ControlOut:
+        row = repo.set_control(session, halted=False, reason=None, updated_at=clock())
+        session.commit()
+        return sc.ControlOut.model_validate(row)
+
+    return app
+
+
+app = create_app()

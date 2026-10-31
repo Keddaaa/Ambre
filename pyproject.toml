@@ -51,4 +51,8 @@ plugins = ["pydantic.mypy"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    # TestClient prefers httpx2; the dev dependency stays on httpx (no new dependency in this task).
+    "ignore:Using `httpx` with `starlette.testclient`",
+]
 testpaths = ["tests"]

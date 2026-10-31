@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from ambre.domain.models import BinaryMarket, MarketSnapshot, SimulationStatus
@@ -238,5 +238,97 @@ def get_current_simulation(session: Session) -> SimulationRow | None:
             SimulationRow.status.in_((SimulationStatus.ACTIVE.value, SimulationStatus.DEAD.value))
         )
         .order_by(SimulationRow.created_at.desc())
+        .limit(1)
+    ).first()
+
+
+def list_markets_filtered(
+    session: Session, *, status: str, q: str | None, limit: int, offset: int
+) -> tuple[list[MarketRow], int]:
+    """Markets filtered by resolution status ('open'|'resolved'|'all') and a
+    case-insensitive substring of the question, with the unpaginated total."""
+    conditions: list[ColumnElement[bool]] = []
+    if status == "open":
+        conditions.append(MarketRow.is_resolved.is_(False))
+    elif status == "resolved":
+        conditions.append(MarketRow.is_resolved.is_(True))
+    if q:
+        conditions.append(func.lower(MarketRow.question).contains(q.lower(), autoescape=True))
+    total = session.scalar(select(func.count()).select_from(MarketRow).where(*conditions)) or 0
+    rows = session.scalars(
+        select(MarketRow)
+        .where(*conditions)
+        .order_by(MarketRow.last_observed_at.desc(), MarketRow.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(rows), total
+
+
+def list_snapshots_for_market(session: Session, market_id: str) -> list[SnapshotRow]:
+    return list(
+        session.scalars(
+            select(SnapshotRow)
+            .where(SnapshotRow.market_id == market_id)
+            .order_by(SnapshotRow.observed_at, SnapshotRow.id)
+        )
+    )
+
+
+def latest_decisions_by_market(
+    session: Session, simulation_id: str, market_ids: list[str]
+) -> dict[str, DecisionRow]:
+    """Most recent decision per market (within one simulation) for the given markets."""
+    if not market_ids:
+        return {}
+    rows = session.scalars(
+        select(DecisionRow)
+        .where(DecisionRow.simulation_id == simulation_id, DecisionRow.market_id.in_(market_ids))
+        .order_by(DecisionRow.created_at, DecisionRow.decision_id)
+    )
+    return {d.market_id: d for d in rows}  # ascending order: the last write wins = newest
+
+
+def list_decisions_filtered(
+    session: Session,
+    simulation_id: str,
+    *,
+    action: str | None = None,
+    market_id: str | None = None,
+    limit: int,
+    offset: int = 0,
+) -> tuple[list[DecisionRow], int]:
+    conditions = [DecisionRow.simulation_id == simulation_id]
+    if action is not None:
+        conditions.append(DecisionRow.action == action)
+    if market_id is not None:
+        conditions.append(DecisionRow.market_id == market_id)
+    total = session.scalar(select(func.count()).select_from(DecisionRow).where(*conditions)) or 0
+    rows = session.scalars(
+        select(DecisionRow)
+        .where(*conditions)
+        .order_by(DecisionRow.created_at.desc(), DecisionRow.decision_id)
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(rows), total
+
+
+def count_decisions(session: Session, simulation_id: str) -> int:
+    return (
+        session.scalar(
+            select(func.count())
+            .select_from(DecisionRow)
+            .where(DecisionRow.simulation_id == simulation_id)
+        )
+        or 0
+    )
+
+
+def latest_portfolio_snapshot(session: Session, simulation_id: str) -> PortfolioSnapshotRow | None:
+    return session.scalars(
+        select(PortfolioSnapshotRow)
+        .where(PortfolioSnapshotRow.simulation_id == simulation_id)
+        .order_by(PortfolioSnapshotRow.at.desc(), PortfolioSnapshotRow.id.desc())
         .limit(1)
     ).first()
