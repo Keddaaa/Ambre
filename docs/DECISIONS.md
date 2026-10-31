@@ -1,0 +1,46 @@
+# Décisions d'architecture (ADR)
+
+## ADR-001 — Monolithe modulaire et écart d'arborescence
+
+- **Problème :** la spec décrit de nombreux moteurs ; il faut une base livrable et testable.
+- **Options :** microservices ; monolithe en un seul module ; monolithe modulaire avec frontières strictes.
+- **Choix :** monolithe modulaire `src/ambre/`, un dossier par moteur, modules de calcul purs. L'arborescence diffère de celle de la spec (pas de dossiers pour les moteurs futurs).
+- **Raisons :** testabilité des calculs sans E/S, déploiement simple, frontières vérifiables.
+- **Compromis :** pas de scalabilité indépendante des moteurs.
+- **Conséquences :** extraire un moteur plus tard reste possible grâce aux frontières ; les moteurs absents ne sont pas simulés par des fichiers vides.
+
+## ADR-002 — SQLite par défaut, PostgreSQL via Compose, types portables
+
+- **Problème :** démarrer sans infrastructure tout en préparant une vraie base.
+- **Options :** PostgreSQL obligatoire ; SQLite seul ; SQLite par défaut avec PostgreSQL optionnel.
+- **Choix :** SQLite par défaut (`var/ambre.db`), PostgreSQL 16 via `docker-compose.yml`, uniquement des types SQLAlchemy portables.
+- **Raisons :** aucun prérequis pour tester ; migration identique sur les deux bases en principe.
+- **Compromis :** la migration PostgreSQL n'a pas été exécutée localement (Docker absent).
+- **Conséquences :** à vérifier avant tout usage PostgreSQL.
+
+## ADR-003 — Remplissage CPMM sur le pool seul, frais à 0
+
+- **Problème :** estimer l'impact d'une mise sur le prix.
+- **Options :** simuler le carnet d'ordres limites ; modèle cpmm-1 sur le pool seul.
+- **Choix :** formules cpmm-1 de Manifold sur le pool, sans ordres limites, avec `fee_rate = 0.0` (les frais renvoyés par l'API valent 0 sur l'échantillon du 2026-10-31).
+- **Raisons :** le carnet n'est pas dans `GET /v0/markets` ; rester à l'API autorisée.
+- **Compromis :** le remplissage réel peut être meilleur ou différent si des ordres limites existent.
+- **Conséquences :** l'impact est une approximation ; si les frais deviennent non nuls, régler `risk.fee_rate`.
+
+## ADR-004 — Baseline de rétrécissement comme estimateur non validé
+
+- **Problème :** il faut une estimation de probabilité qui ne soit pas un simple écho du prix.
+- **Options :** prix du marché seul (aucun edge possible) ; rétrécissement vers le taux de base ; modèle appris.
+- **Choix :** `BaseRateShrinkage` (poids marché 0,9). `MarketPriceBaseline` reste comme référence.
+- **Raisons :** simple, traçable, sans fuite ; permet de tester toute la chaîne de décision.
+- **Compromis :** aucune validation hors échantillon ; aucun avantage sur le marché n'est démontré.
+- **Conséquences :** les opportunités sont **théoriques** et ne prouvent aucune rentabilité. La validation (Brier, log loss, backtesting) est prévue en 0.2.
+
+## ADR-005 — `MANIFOLD_MANA` non implémenté en 0.1
+
+- **Problème :** la spec prévoit un mode d'ordres réels en Mana.
+- **Options :** l'implémenter derrière un drapeau ; le refuser explicitement.
+- **Choix :** le mode lève `ExecutionModeNotAvailable`. Aucun appel d'écriture n'existe dans le code.
+- **Raisons :** aucune baseline validée ne justifie des ordres, même en Mana ; moindre surface d'erreur.
+- **Compromis :** pas de test de bout en bout avec de vrais ordres.
+- **Conséquences :** le réactiver demandera une activation explicite, des garde-fous testés et une nouvelle décision.
