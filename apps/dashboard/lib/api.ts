@@ -144,7 +144,8 @@ export function useMarkets(params: MarketsParams) {
 export function useMarket(id: string) {
   return useQuery({
     queryKey: keys.market(id),
-    queryFn: () => fetchJson<MarketDetail>(`/markets/${encodeURIComponent(id)}`),
+    // `data === null` means the API answered 404: unknown market id.
+    queryFn: () => fetchJsonOrNull<MarketDetail>(`/markets/${encodeURIComponent(id)}`),
   });
 }
 

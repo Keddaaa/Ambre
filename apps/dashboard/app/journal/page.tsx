@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { Pager } from "@/components/pager";
+import { Pager, useClampOffset } from "@/components/pager";
 import { QueryState } from "@/components/state";
 import { signClass } from "@/components/stat";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +31,9 @@ export default function JournalPage() {
   const [action, setAction] = useState<string | undefined>(undefined);
   const [offset, setOffset] = useState(0);
   const decisions = useDecisions({ action, limit: LIMIT, offset });
+  useClampOffset(decisions.data?.total, offset, LIMIT, setOffset);
+  // keepPreviousData keeps the old rows while a new filter loads: make that visible.
+  const stale = decisions.isPlaceholderData;
 
   return (
     <>
@@ -60,7 +63,10 @@ export default function JournalPage() {
 
       <QueryState query={decisions} empty="Aucune décision. Lancez `ambre cycle`.">
         {(page) => (
-          <div className="flex flex-col gap-3">
+          <div
+            className={`flex flex-col gap-3 transition-opacity ${stale ? "pointer-events-none opacity-50" : ""}`}
+            aria-busy={stale}
+          >
             <Table>
               <TableHeader>
                 <TableRow>

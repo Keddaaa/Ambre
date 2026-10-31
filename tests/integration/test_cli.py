@@ -7,12 +7,12 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
 
 import pytest
 from fakes import FakeManifoldClient, load_fixture
 from pydantic import SecretStr
 from sqlalchemy import func, select
+from sqlalchemy.engine import make_url
 
 from ambre import cli
 from ambre.config.settings import Settings
@@ -68,8 +68,12 @@ def test_cycle_subprocess_after_init_db(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     first = result.stdout.splitlines()[0]
     assert first.startswith(HEADER)
-    # SQLAlchemy percent-encodes Windows paths ("C:\..." -> "C%3A%5C..."): compare decoded.
-    assert unquote(first) == f"{HEADER} db=sqlite:///{tmp_path / 'ambre.db'}"
+    # SQLAlchemy percent-encodes Windows paths ("C:\..." -> "C%3A%5C..."), so compare with
+    # its own rendering of the URL rather than a hand-built string: strict and portable.
+    expected_url = make_url(f"sqlite:///{tmp_path / 'ambre.db'}").render_as_string(
+        hide_password=True
+    )
+    assert first == f"{HEADER} db={expected_url}"
     (report,) = _json_lines(result.stdout)
     assert report["survival_state"] == "OBSERVING"  # never synced
     assert report["simulated"] == 0

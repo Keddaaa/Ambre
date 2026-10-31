@@ -1,6 +1,25 @@
 "use client";
 
+import { useEffect } from "react";
+
 import { Button } from "@/components/ui/button";
+
+/**
+ * If the row count shrinks (e.g. markets resolved between two refreshes) while the user is
+ * on a later page, step back to the last page that still exists instead of showing an
+ * empty page with no way back.
+ */
+export function useClampOffset(
+  total: number | undefined,
+  offset: number,
+  limit: number,
+  setOffset: (offset: number) => void,
+) {
+  useEffect(() => {
+    if (total === undefined || offset === 0 || offset < total) return;
+    setOffset(total === 0 ? 0 : Math.floor((total - 1) / limit) * limit);
+  }, [total, offset, limit, setOffset]);
+}
 
 /** Offset/limit pagination controls. `total` is the full row count reported by the API. */
 export function Pager({

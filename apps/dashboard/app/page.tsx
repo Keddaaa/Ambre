@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { usePortfolio, usePortfolioHistory, useSystem } from "@/lib/api";
+import { useDecisions, usePortfolio, usePortfolioHistory, useSystem } from "@/lib/api";
 import {
   formatDateTime,
   formatDrawdown,
@@ -65,6 +65,9 @@ export default function OverviewPage() {
   const portfolio = usePortfolio();
   const history = usePortfolioHistory();
   const system = useSystem();
+  // The API exposes no "active strategy" field: read it from the most recent decision.
+  const latestDecision = useDecisions({ limit: 1, offset: 0 });
+  const lastStrategy = latestDecision.data?.items[0]?.strategy ?? null;
 
   return (
     <>
@@ -122,8 +125,8 @@ export default function OverviewPage() {
                 />
                 <Stat label="Positions ouvertes" value={formatNumber(p.open_positions.length, 0)} />
                 <Stat
-                  label="Stratégie active"
-                  value="VALUE_HUNTER"
+                  label="Stratégie (dernière décision)"
+                  value={lastStrategy ?? "—"}
                   hint={
                     system.data
                       ? `${formatNumber(system.data.decisions_total, 0)} décisions · dernier cycle ${formatRelativeTime(system.data.last_cycle_at, new Date())}`

@@ -11,6 +11,10 @@ import { useHalt, useResume, useSystem } from "@/lib/api";
 import { formatDateTime, formatNumber, formatProb, formatRelativeTime } from "@/lib/format";
 import type { SystemStatus } from "@/lib/types";
 
+// Mirrors HaltIn.reason in src/ambre/api/schemas.py (min_length=3, max_length=500).
+const REASON_MIN = 3;
+const REASON_MAX = 500;
+
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b py-1.5 text-sm last:border-0">
@@ -26,7 +30,10 @@ function EmergencyStop({ system }: { system: SystemStatus }) {
   const [reason, setReason] = useState("");
   const [armed, setArmed] = useState(false);
 
+  // Each action clears the other's state first, so only the latest error is ever shown.
   const error = halt.error ?? resume.error;
+  const trimmed = reason.trim();
+  const reasonValid = trimmed.length >= REASON_MIN && trimmed.length <= REASON_MAX;
 
   if (system.halted) {
     return (
@@ -35,7 +42,14 @@ function EmergencyStop({ system }: { system: SystemStatus }) {
           {system.halt_reason ?? "Aucun motif renseigné."}
         </Alert>
         <div>
-          <Button variant="outline" disabled={resume.isPending} onClick={() => resume.mutate()}>
+          <Button
+            variant="outline"
+            disabled={resume.isPending}
+            onClick={() => {
+              halt.reset();
+              resume.mutate();
+            }}
+          >
             Reprendre
           </Button>
         </div>
@@ -52,8 +66,9 @@ function EmergencyStop({ system }: { system: SystemStatus }) {
           setReason(e.target.value);
           setArmed(false);
         }}
-        placeholder="Motif de l'arrêt (obligatoire)"
+        placeholder={`Motif de l'arrêt (${REASON_MIN} à ${REASON_MAX} caractères)`}
         aria-label="Motif de l'arrêt d'urgence"
+        maxLength={REASON_MAX}
         className="max-w-md"
       />
       <div className="flex items-center gap-2">
@@ -61,12 +76,13 @@ function EmergencyStop({ system }: { system: SystemStatus }) {
           <>
             <Button
               variant="destructive"
-              disabled={halt.isPending}
-              onClick={() =>
-                halt.mutate(reason.trim(), {
+              disabled={halt.isPending || !reasonValid}
+              onClick={() => {
+                resume.reset();
+                halt.mutate(trimmed, {
                   onSettled: () => setArmed(false),
-                })
-              }
+                });
+              }}
             >
               Confirmer l&apos;arrêt d&apos;urgence
             </Button>
@@ -75,7 +91,7 @@ function EmergencyStop({ system }: { system: SystemStatus }) {
             </Button>
           </>
         ) : (
-          <Button variant="destructive" disabled={reason.trim() === ""} onClick={() => setArmed(true)}>
+          <Button variant="destructive" disabled={!reasonValid} onClick={() => setArmed(true)}>
             Arrêt d&apos;urgence
           </Button>
         )}

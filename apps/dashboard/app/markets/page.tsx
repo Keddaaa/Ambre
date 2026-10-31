@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { Pager } from "@/components/pager";
+import { Pager, useClampOffset } from "@/components/pager";
 import { QueryState } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,9 @@ export default function MarketsPage() {
   const [offset, setOffset] = useState(0);
 
   const markets = useMarkets({ status, q: q || undefined, limit: LIMIT, offset });
+  useClampOffset(markets.data?.total, offset, LIMIT, setOffset);
+  // keepPreviousData keeps the old rows while a new filter loads: make that visible.
+  const stale = markets.isPlaceholderData;
 
   return (
     <>
@@ -84,7 +87,10 @@ export default function MarketsPage() {
 
       <QueryState query={markets} empty="Aucun marché ne correspond. Lancez `ambre sync` si la base est vide.">
         {(page) => (
-          <div className="flex flex-col gap-3">
+          <div
+            className={`flex flex-col gap-3 transition-opacity ${stale ? "pointer-events-none opacity-50" : ""}`}
+            aria-busy={stale}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
