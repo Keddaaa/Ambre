@@ -39,6 +39,10 @@ class ExecutionGate:
 class DecisionDraft:
     """Decision columns supplied by the pipeline (status and settlement fields excluded).
 
+    ``conservative_probability``, ``expected_value``, ``ev_per_mana`` and
+    ``avg_price`` are None when unknown (NO_TRADE, rejection without a simulated
+    fill): a missing value is never stored as 0.
+
     When a ``FillValue`` is passed to ``execute``, its stake, shares, average price,
     expected value and EV per mana replace the draft's; ``risk_reasons`` always
     comes from the verdict.
@@ -51,14 +55,14 @@ class DecisionDraft:
     strategy: str
     market_probability: float
     estimated_probability: float
-    conservative_probability: float
+    conservative_probability: float | None
     uncertainty: float
-    expected_value: float
-    ev_per_mana: float
+    expected_value: float | None
+    ev_per_mana: float | None
     action: str
     stake: float
     shares: float
-    avg_price: float
+    avg_price: float | None
     reasons: list[str]
     invalidation: list[str]
     source_ids: list[str]

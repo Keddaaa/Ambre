@@ -22,6 +22,22 @@ class RiskEngine:
     def __init__(self, cfg: RiskConfig) -> None:
         self.cfg = cfg
 
+    def capacity(self, portfolio: PortfolioView) -> float:
+        """Largest stake any new position could still get from cash and total exposure.
+
+        ``min(cash, max_total_exposure_fraction * total_value - open_exposure)``
+        over ``1 + fee_rate``; 0 when the valuation is non-finite.
+        """
+        cfg = self.cfg
+        values = (portfolio.cash, portfolio.total_value, portfolio.open_exposure)
+        if not all(math.isfinite(x) for x in values):
+            return 0.0
+        room = min(
+            portfolio.cash,
+            cfg.max_total_exposure_fraction * portfolio.total_value - portfolio.open_exposure,
+        )
+        return max(0.0, room / (1 + cfg.fee_rate))
+
     def evaluate(
         self,
         proposal: Proposal,

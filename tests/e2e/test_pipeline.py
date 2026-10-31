@@ -37,6 +37,7 @@ from ambre.infrastructure.orm import (
 )
 from ambre.pipeline import CycleReport, run_cycle
 from ambre.portfolio.service import PortfolioService, create_simulation
+from ambre.risk_engine.risk import RiskEngine
 from ambre.value_engine.cpmm import cpmm_fill
 from ambre.value_engine.value import assess_fill
 
@@ -89,9 +90,18 @@ def open_market_count(factory: sessionmaker[Session]) -> int:
 
 
 def assert_counts_consistent(report: CycleReport) -> None:
+    # Each eligible market ends in exactly one bucket.
     assert report.evaluated == (
         report.no_trade + report.simulated + report.rejected + report.skipped_duplicate
     )
+    assert report.skipped_by_survival == 0 or report.evaluated == report.skipped_duplicate
+
+
+def journaled(factory: sessionmaker[Session]) -> int:
+    return count(factory, DecisionRow)
+
+
+METRICS = ("expected_value", "ev_per_mana", "avg_price")
 
 
 # --------------------------------------------------------------------------- tests
@@ -177,6 +187,10 @@ def test_stale_data_observing_no_bets(factory: sessionmaker[Session]) -> None:
 
     assert report.survival_state is SurvivalState.OBSERVING
     assert report.simulated == 0
+    assert report.evaluated == 0
+    assert report.skipped_by_survival > 0
+    assert_counts_consistent(report)
+    assert journaled(factory) == 0  # vetoed markets are not journaled
     assert count(factory, PositionRow) == 0
     assert only_simulation(factory).status == SimulationStatus.ACTIVE.value
     with factory() as s:
@@ -203,6 +217,126 @@ def test_halt_flag_stops_new_positions(factory: sessionmaker[Session]) -> None:
     assert count(factory, PositionRow) == 0
     # A manual halt never kills the simulation.
     assert only_simulation(factory).status == SimulationStatus.ACTIVE.value
+
+
+def test_halt_then_resume_evaluates_the_same_snapshots(factory: sessionmaker[Session]) -> None:
+    sync(factory, load_fixture(), T_SYNC)
+    with factory.begin() as s:
+        repo.set_control(s, halted=True, reason="manual stop", updated_at=T_SYNC)
+
+    halted = cycle(factory)
+
+    assert halted.survival_state is SurvivalState.HALTED
+    assert halted.evaluated == 0
+    assert halted.skipped_by_survival > 0
+    assert journaled(factory) == 0
+
+    with factory.begin() as s:
+        repo.set_control(s, halted=False, reason=None, updated_at=T_CYCLE)
+    resumed = cycle(factory, T_CYCLE + timedelta(minutes=1))  # no new snapshot in between
+
+    assert resumed.survival_state is SurvivalState.BALANCED
+    assert resumed.skipped_by_survival == 0
+    assert resumed.skipped_duplicate == 0
+    assert resumed.evaluated == halted.skipped_by_survival
+    assert resumed.simulated > 0
+    assert journaled(factory) == resumed.evaluated
+    assert_counts_consistent(resumed)
+
+
+def test_capacity_exhausted_skips_then_resumes_after_settlement(
+    factory: sessionmaker[Session],
+) -> None:
+    fixture = load_fixture()
+    sync(factory, fixture, T_SYNC)
+    tight = SETTINGS.model_copy(
+        update={"risk": SETTINGS.risk.model_copy(update={"max_total_exposure_fraction": 0.01})}
+    )
+
+    first = cycle(factory, settings=tight)
+
+    assert first.simulated > 0
+    assert first.skipped_no_capacity > 0
+    assert_counts_consistent(first)
+    with factory() as s:
+        svc = PortfolioService(s, only_simulation(factory).id)
+        prices = {}
+        for p in svc.open_positions():
+            snap = repo.latest_snapshot_for_market(s, p.market_id)
+            assert snap is not None
+            prices[p.market_id] = snap.probability
+        room = RiskEngine(tight.risk).capacity(svc.view(prices))
+        first_markets = set(s.scalars(select(DecisionRow.market_id)).all())
+        pos = s.scalars(select(PositionRow).order_by(PositionRow.id)).first()
+        assert pos is not None
+        cancelled = pos.market_id
+    assert room < tight.risk.min_stake  # less than one minimum stake of room left
+    assert journaled(factory) == first.evaluated  # skipped markets are not journaled
+
+    # The market of the first position is cancelled: its cost is refunded, room frees up.
+    t2 = T_CYCLE + timedelta(minutes=5)
+    raw = copy.deepcopy(next(m for m in fixture if m["id"] == cancelled))
+    raw.update(
+        isResolved=True,
+        resolution="CANCEL",
+        resolutionTime=ms(t2 - timedelta(seconds=20)),
+        lastUpdatedTime=ms(t2 - timedelta(seconds=10)),
+    )
+    sync(factory, [raw], t2)
+
+    second = cycle(factory, t2 + timedelta(minutes=1), settings=tight)
+
+    assert second.settled.refunded == 1
+    assert_counts_consistent(second)
+    with factory() as s:
+        second_markets = set(s.scalars(select(DecisionRow.market_id)).all())
+    assert second_markets - first_markets  # previously skipped markets are now journaled
+    assert second.no_trade + second.simulated + second.rejected > 0
+
+
+def test_missing_metrics_are_stored_as_none(factory: sessionmaker[Session]) -> None:
+    fixture = load_fixture()
+    sync(factory, fixture, T_SYNC)
+    first = cycle(factory)
+    assert first.no_trade > 0 and first.simulated > 0
+    with factory() as s:
+        no_trades = s.scalars(
+            select(DecisionRow).where(DecisionRow.action == Action.NO_TRADE.value)
+        ).all()
+        pos = s.scalars(select(PositionRow).order_by(PositionRow.id)).first()
+        assert pos is not None
+        traded = pos.market_id
+    for d in no_trades:
+        assert all(getattr(d, m) is None for m in METRICS)
+        assert d.conservative_probability is None
+        assert d.stake == 0.0 and d.shares == 0.0  # true zeros
+    with factory() as s:
+        sims = s.scalars(
+            select(DecisionRow).where(
+                DecisionRow.execution_status == ExecutionStatus.SIMULATED.value
+            )
+        ).all()
+    for d in sims:
+        assert all(getattr(d, m) is not None for m in METRICS)
+        assert d.conservative_probability is not None
+
+    # A new snapshot of a market already held: rejected without any simulated fill.
+    t2 = T_CYCLE + timedelta(minutes=5)
+    raw = copy.deepcopy(next(m for m in fixture if m["id"] == traded))
+    raw.update(lastUpdatedTime=ms(t2 - timedelta(seconds=10)))
+    sync(factory, [raw], t2)
+    cycle(factory, t2 + timedelta(minutes=1))
+
+    with factory() as s:
+        rejected = s.scalars(
+            select(DecisionRow).where(
+                DecisionRow.market_id == traded,
+                DecisionRow.execution_status == ExecutionStatus.REJECTED.value,
+            )
+        ).all()
+    (rej,) = rejected
+    assert any("already has an open position" in r for r in rej.risk_reasons)
+    assert all(getattr(rej, m) is None for m in METRICS)
 
 
 def _big_bet(s: Session, sim_id: str, market_id: str, stake: float) -> None:

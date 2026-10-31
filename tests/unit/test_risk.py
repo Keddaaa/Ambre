@@ -160,3 +160,14 @@ def test_risk_caps_fee_inclusive_cost_to_exposure_room():
     assert verdict.stake == pytest.approx(10.0)
     assert fv is not None
     assert portfolio.open_exposure + fv.cost <= 200 + 1e-9
+
+
+def test_capacity_is_cash_and_exposure_room_net_of_fees():
+    engine = RiskEngine(RiskConfig(max_total_exposure_fraction=0.2, fee_rate=0.0))
+    assert engine.capacity(make_portfolio()) == 200.0
+    assert engine.capacity(make_portfolio(open_exposure=150.0)) == 50.0
+    assert engine.capacity(make_portfolio(cash=30.0, open_exposure=150.0)) == 30.0
+    assert engine.capacity(make_portfolio(open_exposure=250.0)) == 0.0
+    fees = RiskEngine(RiskConfig(max_total_exposure_fraction=0.2, fee_rate=0.25))
+    assert fees.capacity(make_portfolio()) == 160.0
+    assert engine.capacity(make_portfolio(total_value=float("nan"))) == 0.0

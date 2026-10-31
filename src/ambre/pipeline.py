@@ -52,9 +52,13 @@ NO_MODEL = "none"
 class CycleReport:
     """Counts of one cycle.
 
-    ``evaluated`` counts eligible markets; each one ends in exactly one of
-    ``no_trade`` (NOT_EXECUTED decisions), ``simulated``, ``rejected`` or
-    ``skipped_duplicate`` (idempotency key already journaled).
+    Every eligible market ends in exactly one bucket: ``skipped_duplicate``
+    (idempotency key already journaled), ``skipped_by_survival`` (survival forbids
+    new positions or exposure is unknown: nothing is evaluated nor journaled),
+    ``skipped_no_capacity`` (less than one minimum stake of room left: not
+    journaled, so the snapshot is evaluated on a later cycle), or a journaled
+    decision: ``no_trade`` (NOT_EXECUTED), ``simulated`` or ``rejected``.
+    ``evaluated`` = ``no_trade + simulated + rejected + skipped_duplicate``.
     """
 
     survival_state: SurvivalState
@@ -64,6 +68,8 @@ class CycleReport:
     simulated: int = 0
     rejected: int = 0
     skipped_duplicate: int = 0
+    skipped_by_survival: int = 0
+    skipped_no_capacity: int = 0
     settled: SettlementReport = field(default_factory=lambda: SettlementReport(0, 0))
     model_version: str = NO_MODEL
 
@@ -144,7 +150,22 @@ class _Cycle:
         view: PortfolioView,
         survival: SurvivalAssessment,
     ) -> PortfolioView:
-        """Evaluate the open markets; return the portfolio view after the trades."""
+        """Evaluate the open markets; return the portfolio view after the trades.
+
+        Survival vetoes and exhausted capacity are global, not market-specific: the
+        markets they block are counted but never journaled, so their snapshots stay
+        available for a later cycle.
+        """
+        blocked = not (
+            survival.allow_new_positions and view.exposure_known and math.isfinite(view.total_value)
+        )
+        if blocked:
+            logger.info(
+                "survival state %s (%s): markets not evaluated",
+                survival.state.value,
+                "; ".join(survival.reasons),
+            )
+        no_room_logged = False
         pairs = repo.latest_snapshots_for_open_markets(self.s, self.settings.max_markets_per_cycle)
         for market_row, snap_row in pairs:
             market, snap = _to_market(market_row), _to_snapshot(snap_row)
@@ -153,12 +174,22 @@ class _Cycle:
             ):
                 report.ineligible += 1
                 continue
-            report.evaluated += 1
             # The key names the strategy that evaluated (VALUE_HUNTER), NO_TRADE outcomes too.
             key = idempotency_key(self.sim_id, market.id, snap_row.id, self.strategy.name.value)
             if self.key_exists(key):
+                report.evaluated += 1
                 report.skipped_duplicate += 1
                 continue
+            if blocked:
+                report.skipped_by_survival += 1
+                continue
+            if self.risk.capacity(view) < self.settings.risk.min_stake:
+                if not no_room_logged:
+                    logger.info("no capacity left for a minimum stake: remaining markets skipped")
+                    no_room_logged = True
+                report.skipped_no_capacity += 1
+                continue
+            report.evaluated += 1
             status = self.decide(market, snap, snap_row.id, key, model, view, survival)
             if status is ExecutionStatus.SIMULATED:
                 report.simulated += 1
@@ -183,8 +214,8 @@ class _Cycle:
         proposal = self.strategy.evaluate(
             market, snap, estimate, view.total_value, self.settings.risk
         )
-        # Defaults describe a NO_TRADE; a proposal overrides the trade fields. Without a
-        # simulated fill there is no EV to record (the columns are NOT NULL): 0.0.
+        # Defaults describe a NO_TRADE; a proposal overrides the trade fields. Unknown
+        # values stay None (never 0): the executor fills EV and price from a simulated fill.
         draft = DecisionDraft(
             market_id=market.id,
             snapshot_id=snapshot_id,
@@ -193,14 +224,14 @@ class _Cycle:
             strategy=self.strategy.name.value,
             market_probability=snap.probability,
             estimated_probability=estimate.probability,
-            conservative_probability=estimate.probability,
+            conservative_probability=None,
             uncertainty=estimate.uncertainty,
-            expected_value=0.0,
-            ev_per_mana=0.0,
+            expected_value=None,
+            ev_per_mana=None,
             action=Action.NO_TRADE.value,
             stake=0.0,
             shares=0.0,
-            avg_price=0.0,
+            avg_price=None,
             reasons=[
                 f"p={estimate.probability:g}",
                 f"q={snap.probability:g}",
@@ -264,8 +295,6 @@ def run_cycle(session: Session, settings: Settings, now: datetime) -> CycleRepor
         reason = "; ".join(survival.reasons)
         mark_simulation_dead(session, sim.id, reason, now)
         logger.error("simulation %s marked DEAD: %s", sim.id, reason)
-    elif not math.isfinite(view.total_value):
-        logger.warning("portfolio valuation unavailable: markets not evaluated this cycle")
     else:
         model = BaseRateShrinkage.fit(
             repo.resolved_binary_outcomes(session, before=now), settings.prediction
