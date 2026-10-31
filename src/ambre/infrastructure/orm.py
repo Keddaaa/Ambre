@@ -3,7 +3,17 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from ambre.infrastructure.db import UTCDateTime
@@ -47,7 +57,10 @@ class IgnoredMarketRow(Base):
 
 class SnapshotRow(Base):
     __tablename__ = "market_snapshots"
-    __table_args__ = (UniqueConstraint("market_id", "event_at"),)
+    __table_args__ = (
+        UniqueConstraint("market_id", "event_at"),
+        Index("ix_market_snapshots_market_id_observed_at", "market_id", "observed_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     market_id: Mapped[str] = mapped_column(String, ForeignKey("markets.id"), index=True)
@@ -69,7 +82,7 @@ class SyncStateRow(Base):
     __tablename__ = "sync_state"
 
     key: Mapped[str] = mapped_column(String, primary_key=True)
-    high_watermark_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    high_watermark_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(String, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime)

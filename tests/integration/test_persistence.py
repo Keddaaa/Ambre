@@ -211,3 +211,14 @@ def test_alembic_matches_models(tmp_path: Path) -> None:
     with engine.connect() as conn:
         ctx = MigrationContext.configure(conn, opts={"compare_type": True})
         assert compare_metadata(ctx, Base.metadata) == []
+
+
+def test_sync_state_bigint_watermark(session: Session) -> None:
+    ms = 1_793_454_346_285
+    repo.save_sync_state(
+        session, "w", high_watermark_ms=ms, last_success_at=T0, last_error=None, updated_at=T0
+    )
+    session.commit()
+    session.expire_all()
+    st = repo.get_sync_state(session, "w")
+    assert st is not None and st.high_watermark_ms == ms

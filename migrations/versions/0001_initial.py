@@ -70,7 +70,7 @@ def upgrade() -> None:
     op.create_table(
         "sync_state",
         sa.Column("key", sa.String(), nullable=False),
-        sa.Column("high_watermark_ms", sa.Integer(), nullable=True),
+        sa.Column("high_watermark_ms", sa.BigInteger(), nullable=True),
         sa.Column("last_success_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_error", sa.String(), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
@@ -102,6 +102,9 @@ def upgrade() -> None:
     with op.batch_alter_table("market_snapshots", schema=None) as batch_op:
         batch_op.create_index(
             batch_op.f("ix_market_snapshots_market_id"), ["market_id"], unique=False
+        )
+        batch_op.create_index(
+            "ix_market_snapshots_market_id_observed_at", ["market_id", "observed_at"], unique=False
         )
 
     op.create_table(
@@ -254,6 +257,7 @@ def downgrade() -> None:
 
     op.drop_table("portfolio_snapshots")
     with op.batch_alter_table("market_snapshots", schema=None) as batch_op:
+        batch_op.drop_index("ix_market_snapshots_market_id_observed_at")
         batch_op.drop_index(batch_op.f("ix_market_snapshots_market_id"))
 
     op.drop_table("market_snapshots")
