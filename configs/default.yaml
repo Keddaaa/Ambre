@@ -1,0 +1,21 @@
+# Experimental, non-optimized initial parameters.
+risk:
+  max_position_fraction: 0.02
+  max_total_exposure_fraction: 0.20
+  kelly_fraction: 0.25
+  minimum_edge: 0.03
+  critical_drawdown: 0.30
+  min_stake: 1.0
+  fee_rate: 0.0
+survival:
+  defensive_drawdown: 0.15
+  defensive_stake_multiplier: 0.5
+  failure_value_fraction: 0.50
+  max_data_age_seconds: 900
+eligibility:
+  min_total_liquidity: 100.0
+  min_unique_bettors: 5
+  min_seconds_to_close: 3600
+prediction:
+  shrinkage_market_weight: 0.9
+  uncertainty_floor: 0.02
