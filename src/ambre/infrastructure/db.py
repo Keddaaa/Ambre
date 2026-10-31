@@ -45,10 +45,17 @@ def make_engine(url: str) -> Engine:
             Path(db).parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(url, **kwargs)
     if is_sqlite:
-
+        # pysqlite's legacy transaction handling emits no BEGIN before a SAVEPOINT, so
+        # RELEASE SAVEPOINT would commit for real and an outer rollback would lose
+        # nothing. Take over transaction control (SQLAlchemy's documented recipe).
         @event.listens_for(engine, "connect")
-        def _enable_fk(dbapi_connection: Any, _record: Any) -> None:
+        def _on_connect(dbapi_connection: Any, _record: Any) -> None:
+            dbapi_connection.isolation_level = None
             dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+        @event.listens_for(engine, "begin")
+        def _on_begin(conn: Any) -> None:
+            conn.exec_driver_sql("BEGIN")
 
     return engine
 

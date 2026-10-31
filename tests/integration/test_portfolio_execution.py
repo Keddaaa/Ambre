@@ -602,3 +602,41 @@ def test_record_snapshot_and_peak_value(session: Session) -> None:
     assert svc.peak_value() == pytest.approx(peak)
     last = repo.list_portfolio_snapshots(session, sim_id)[-1]
     assert last.drawdown == pytest.approx(1 - lower.total_value / peak)
+
+
+def test_execute_rejects_fill_larger_than_approved_stake(session: Session) -> None:
+    sim_id = new_sim(session)
+    snap_id = add_market(session)
+    verdict = RiskVerdict(approved=True, stake=10.0, reasons=["approved for 10"])
+    before = (count(session, DecisionRow), count(session, LedgerRow), count(session, PositionRow))
+
+    with pytest.raises(ValueError, match="exceeds approved stake"):
+        PaperExecutor(session, sim_id, ExecutionMode.PAPER).execute(
+            draft(sim_id, snap_id), verdict, fill_value(stake=10.5)
+        )
+
+    after = (count(session, DecisionRow), count(session, LedgerRow), count(session, PositionRow))
+    assert after == before
+
+
+def test_execute_accepts_fill_equal_to_approved_stake(session: Session) -> None:
+    sim_id = new_sim(session)
+    snap_id = add_market(session)
+    verdict = RiskVerdict(approved=True, stake=10.0, reasons=["approved for 10"])
+    PaperExecutor(session, sim_id, ExecutionMode.PAPER).execute(
+        draft(sim_id, snap_id), verdict, fill_value(stake=10.0)
+    )
+    assert count(session, PositionRow) == 1
+
+
+def test_record_snapshot_skipped_when_exposure_unknown(session: Session) -> None:
+    sim_id = new_sim(session)
+    svc = PortfolioService(session, sim_id)
+    bet(session, sim_id)
+    view = svc.view({})  # no price for the open position: total_value is a lower bound
+    assert view.exposure_known is False
+    assert math.isfinite(view.total_value)
+
+    svc.record_snapshot(view, svc.peak_value(), balanced(), NOW)
+
+    assert count(session, PortfolioSnapshotRow) == 0

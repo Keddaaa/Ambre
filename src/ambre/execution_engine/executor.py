@@ -15,6 +15,7 @@ from ambre.infrastructure.orm import DecisionRow, LedgerRow, PositionRow
 from ambre.portfolio.service import OPEN, PortfolioService
 from ambre.value_engine.value import FillValue
 
+STAKE_TOLERANCE = 1e-9  # relative slack on fill.amount vs the approved stake
 MANIFOLD_NOT_AVAILABLE = "Manifold order execution is not implemented in v0.1"
 
 
@@ -97,6 +98,15 @@ class PaperExecutor:
         is_trade = d.action != Action.NO_TRADE.value
         if verdict.approved and not is_trade:
             raise ValueError("an approved verdict cannot come with a NO_TRADE action")
+        if (
+            verdict.approved
+            and fill_value is not None
+            and not fill_value.fill.amount <= verdict.stake * (1 + STAKE_TOLERANCE)
+        ):
+            raise ValueError(
+                f"fill amount {fill_value.fill.amount:.6f} exceeds approved stake "
+                f"{verdict.stake:.6f}"
+            )
         if not is_trade:
             status = ExecutionStatus.NOT_EXECUTED
         elif not verdict.approved:

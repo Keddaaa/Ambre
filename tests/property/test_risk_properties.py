@@ -184,7 +184,12 @@ def test_survival_non_finite_inputs(total, peak, initial, age, known, halted):
         return
     assert a.state in REACHABLE
     finite = all(math.isfinite(x) for x in (total, peak, initial))
-    if not finite:
+    if halted:
+        assert a.state is SurvivalState.HALTED
+    elif not known:
+        # Unknown exposure (DB error, missing price) observes; it never halts nor fails.
+        assert a.state is SurvivalState.OBSERVING
+    elif not finite:
         assert a.state is SurvivalState.HALTED
     if a.allow_new_positions:
         assert finite and age is not None and math.isfinite(age)

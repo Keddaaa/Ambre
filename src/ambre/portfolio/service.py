@@ -111,7 +111,19 @@ class PortfolioService:
     def record_snapshot(
         self, view: PortfolioView, peak: float, survival: SurvivalAssessment, now: datetime
     ) -> None:
-        """Persist a portfolio snapshot. A non-finite valuation is logged, not stored."""
+        """Persist a portfolio snapshot.
+
+        A non-finite valuation, or a view whose exposure is unknown (its total is
+        only a lower bound), is logged and not stored.
+        """
+        if not view.exposure_known:
+            logger.warning(
+                "portfolio snapshot skipped for simulation %s: exposure unknown "
+                "(total_value=%s is only a lower bound)",
+                self.simulation_id,
+                view.total_value,
+            )
+            return
         if not all(math.isfinite(x) for x in (view.cash, view.total_value, peak)) or peak <= 0:
             logger.warning(
                 "portfolio snapshot skipped for simulation %s: invalid valuation "

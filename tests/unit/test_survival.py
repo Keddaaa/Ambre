@@ -2,7 +2,12 @@ import pytest
 
 from ambre.config.settings import RiskConfig, SurvivalConfig
 from ambre.domain.models import SurvivalState
-from ambre.survival_engine.survival import SurvivalInputs, assess_survival
+from ambre.survival_engine.survival import (
+    FAILURE_REASON_PREFIX,
+    SurvivalInputs,
+    assess_survival,
+    is_failure,
+)
 
 CFG = SurvivalConfig()
 RISK = RiskConfig()
@@ -31,9 +36,12 @@ def _inputs(**kw):
             0.0,
             False,
         ),
-        # Rule 2 beats stale data and drawdown.
+        # Unknown exposure beats failure: a lower-bound value must never kill the simulation.
+        ({"total_value": 100.0, "exposure_known": False}, SurvivalState.OBSERVING, 0.0, False),
+        # Failure beats stale data and drawdown.
         ({"total_value": 500.0, "data_age_seconds": None}, SurvivalState.HALTED, 0.0, False),
-        # Rule 3 beats drawdown.
+        # Stale data beats drawdown.
+        ({"total_value": 600.0, "data_age_seconds": None}, SurvivalState.OBSERVING, 0.0, False),
         ({"total_value": 600.0, "exposure_known": False}, SurvivalState.OBSERVING, 0.0, False),
         ({"total_value": 700.0}, SurvivalState.CRITICAL, 0.0, False),
         ({"total_value": 850.0}, SurvivalState.DEFENSIVE, 0.5, True),
@@ -108,3 +116,28 @@ def test_survival_non_finite_data_age_observing(age):
     a = assess_survival(_inputs(data_age_seconds=age), CFG, RISK)
     assert a.state is SurvivalState.OBSERVING
     assert not a.allow_new_positions
+
+
+def test_survival_db_error_view_is_observing_not_halted():
+    # PortfolioService.view on a DB error: NaN valuations with exposure_known=False.
+    a = assess_survival(
+        _inputs(total_value=NAN, peak_value=1000.0, exposure_known=False), CFG, RISK
+    )
+    assert a.state is SurvivalState.OBSERVING
+    assert a.reasons == ["exposure unknown"]
+
+
+def test_survival_missing_price_never_triggers_failure():
+    # A missing price gives a lower-bound total (cash only) with exposure_known=False.
+    a = assess_survival(_inputs(total_value=10.0, exposure_known=False), CFG, RISK)
+    assert a.state is SurvivalState.OBSERVING
+    assert not any(r.startswith(FAILURE_REASON_PREFIX) for r in a.reasons)
+
+
+def test_survival_failure_beats_stale_data_and_is_tagged():
+    a = assess_survival(_inputs(total_value=400.0, data_age_seconds=NAN), CFG, RISK)
+    assert a.state is SurvivalState.HALTED
+    assert is_failure(a)
+    assert not is_failure(assess_survival(_inputs(halted=True), CFG, RISK))
+    assert not is_failure(assess_survival(_inputs(total_value=NAN), CFG, RISK))
+    assert not is_failure(assess_survival(_inputs(data_age_seconds=None), CFG, RISK))

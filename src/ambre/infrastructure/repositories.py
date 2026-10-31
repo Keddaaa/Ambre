@@ -228,3 +228,15 @@ def list_portfolio_snapshots(
     if limit is not None:
         stmt = stmt.limit(limit)
     return list(session.scalars(stmt))
+
+
+def get_current_simulation(session: Session) -> SimulationRow | None:
+    """Most recent simulation that is ACTIVE or DEAD (ARCHIVED ones are never current)."""
+    return session.scalars(
+        select(SimulationRow)
+        .where(
+            SimulationRow.status.in_((SimulationStatus.ACTIVE.value, SimulationStatus.DEAD.value))
+        )
+        .order_by(SimulationRow.created_at.desc())
+        .limit(1)
+    ).first()

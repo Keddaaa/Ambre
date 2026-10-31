@@ -6,13 +6,13 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ambre.domain.models import BinaryMarket, MarketSnapshot
 from ambre.infrastructure import repositories as repo
-from ambre.infrastructure.db import UTCDateTime, make_engine
+from ambre.infrastructure.db import UTCDateTime, make_engine, make_session_factory
 from ambre.infrastructure.orm import Base, PositionRow, SimulationRow
 
 T0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -222,3 +222,20 @@ def test_sync_state_bigint_watermark(session: Session) -> None:
     session.expire_all()
     st = repo.get_sync_state(session, "w")
     assert st is not None and st.high_watermark_ms == ms
+
+
+@pytest.mark.parametrize("file_db", [True, False])
+def test_rollback_discards_work_done_in_a_savepoint(tmp_path: Path, file_db: bool) -> None:
+    # pysqlite's legacy transaction handling would let RELEASE SAVEPOINT commit for real.
+    from ambre.portfolio.service import create_simulation
+
+    url = f"sqlite:///{tmp_path / 'tx.db'}" if file_db else "sqlite://"
+    engine = make_engine(url)
+    Base.metadata.create_all(engine)
+    factory = make_session_factory(engine)
+    with factory() as s:
+        create_simulation(s, "rolled-back", 1000.0, T0)
+        s.rollback()
+    with factory() as s:
+        assert s.scalar(select(func.count()).select_from(SimulationRow)) == 0
+    engine.dispose()
