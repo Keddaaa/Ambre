@@ -1,69 +1,204 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { CapitalChart } from "@/components/capital-chart";
+import { QueryState } from "@/components/state";
+import { Alert, Stat, signClass } from "@/components/stat";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { usePortfolio, usePortfolioHistory, useSystem } from "@/lib/api";
+import {
+  formatDateTime,
+  formatDrawdown,
+  formatMana,
+  formatNumber,
+  formatRelativeTime,
+  formatSignedMana,
+} from "@/lib/format";
+import type { Portfolio, SystemStatus } from "@/lib/types";
+import Link from "next/link";
+
+function Alerts({ portfolio, system }: { portfolio: Portfolio | null; system: SystemStatus | undefined }) {
+  const items: React.ReactNode[] = [];
+  if (system?.halted) {
+    items.push(
+      <Alert key="halt" tone="critical" title="Arrêt d'urgence actif (HALTED)">
+        {system.halt_reason ?? "Aucun motif renseigné."} Aucune nouvelle mise n&apos;est simulée.
+      </Alert>,
+    );
+  }
+  if (portfolio?.simulation.status === "DEAD") {
+    items.push(
+      <Alert key="dead" tone="critical" title="Simulation morte">
+        La valeur a atteint le seuil d&apos;échec. Elle n&apos;est jamais réinitialisée : créez une
+        nouvelle simulation (`ambre new-simulation`).
+      </Alert>,
+    );
+  }
+  if (system && system.data_age_seconds !== null && system.data_age_seconds > system.survival.max_data_age_seconds) {
+    items.push(
+      <Alert key="stale" title="Données périmées">
+        Dernière synchro {formatRelativeTime(system.last_sync_at, new Date())} (limite{" "}
+        {system.survival.max_data_age_seconds} s). Le système observe sans miser.
+      </Alert>,
+    );
+  }
+  if (system && system.last_sync_at === null) {
+    items.push(
+      <Alert key="nosync" title="Aucune synchronisation">
+        Lancez `ambre sync` ou `ambre worker`.
+      </Alert>,
+    );
+  }
+  if (items.length === 0) return null;
+  return <div className="flex flex-col gap-2">{items}</div>;
+}
+
+export default function OverviewPage() {
+  const portfolio = usePortfolio();
+  const history = usePortfolioHistory();
+  const system = useSystem();
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <>
+      <div>
+        <h1 className="text-lg font-semibold">Vue d&apos;ensemble</h1>
+        <p className="text-sm text-muted-foreground">
+          Simulation papier en Mana virtuel. Mana ≠ argent réel ; aucun résultat n&apos;indique une
+          rentabilité.
+        </p>
+      </div>
+
+      {system.isError ? null : <Alerts portfolio={portfolio.data ?? null} system={system.data} />}
+
+      <QueryState
+        query={portfolio}
+        empty={
+          <>
+            Aucune simulation. Initialisez la base (`ambre init-db`) puis lancez `ambre cycle` ou{" "}
+            `ambre worker`.
+          </>
+        }
+      >
+        {(p) => {
+          const performance = p.total_value - p.simulation.initial_capital;
+          const bound = p.total_value_is_lower_bound;
+          return (
+            <>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <Stat
+                  label="Capital total"
+                  value={`${bound ? "≥ " : ""}${formatMana(p.total_value)}`}
+                  hint={bound ? "Borne basse : exposition inconnue" : `Initial ${formatMana(p.simulation.initial_capital)}`}
+                />
+                <Stat label="Cash" value={formatMana(p.cash)} />
+                <Stat
+                  label="Valeur latente"
+                  value={formatMana(p.positions_value)}
+                  hint="latente, non réalisée"
+                />
+                <Stat
+                  label="Performance nette"
+                  value={bound ? "—" : formatSignedMana(performance)}
+                  valueClassName={bound ? undefined : signClass(performance)}
+                  hint="total − capital initial"
+                />
+                <Stat
+                  label="Drawdown"
+                  value={formatDrawdown(p.drawdown)}
+                  hint={`Pic ${formatMana(p.peak_value)}`}
+                />
+                <Stat
+                  label="État de survie"
+                  value={p.survival_state ?? "—"}
+                  hint={p.survival_reasons.length ? p.survival_reasons.join(" · ") : undefined}
+                />
+                <Stat label="Positions ouvertes" value={formatNumber(p.open_positions.length, 0)} />
+                <Stat
+                  label="Stratégie active"
+                  value="VALUE_HUNTER"
+                  hint={
+                    system.data
+                      ? `${formatNumber(system.data.decisions_total, 0)} décisions · dernier cycle ${formatRelativeTime(system.data.last_cycle_at, new Date())}`
+                      : undefined
+                  }
+                />
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Valeur totale</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <QueryState
+                    query={history}
+                    empty="Pas encore d'historique : il apparaît après le premier cycle."
+                  >
+                    {(h) => <CapitalChart history={h} initialCapital={p.simulation.initial_capital} />}
+                  </QueryState>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Positions ouvertes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {p.open_positions.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Aucune position ouverte.</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Marché</TableHead>
+                          <TableHead>Côté</TableHead>
+                          <TableHead className="text-right">Parts</TableHead>
+                          <TableHead className="text-right">Coût</TableHead>
+                          <TableHead className="text-right">Valeur latente</TableHead>
+                          <TableHead>Ouverte</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {p.open_positions.map((pos) => (
+                          <TableRow key={`${pos.market_id}-${pos.side}`}>
+                            <TableCell className="max-w-md truncate">
+                              <Link className="hover:underline" href={`/markets/${encodeURIComponent(pos.market_id)}`}>
+                                {pos.question ?? pos.market_id}
+                              </Link>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{pos.side}</Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono tabular-nums">
+                              {formatNumber(pos.shares)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono tabular-nums">
+                              {formatMana(pos.cost)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono tabular-nums">
+                              {formatMana(pos.current_value)}
+                            </TableCell>
+                            <TableCell title={formatDateTime(pos.opened_at)}>
+                              {formatRelativeTime(pos.opened_at, new Date())}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          );
+        }}
+      </QueryState>
+    </>
   );
 }
