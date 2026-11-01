@@ -18,7 +18,7 @@ FastAPI, `src/ambre/api/app.py`. Schémas dans `api/schemas.py`, miroir TypeScri
 | Méthode | Route | Rôle |
 |---|---|---|
 | GET | `/health` | Santé et base |
-| GET | `/system` | Mode, ordres, arrêt, synchro, limites de risque et de survie |
+| GET | `/system` | Mode, ordres, arrêt, synchro, stratégie active, limites de risque et de survie |
 | GET | `/markets` | Liste filtrable (`status`, `q`, `limit`, `offset`) |
 | GET | `/markets/{id}` | Marché, snapshots, décisions |
 | GET | `/decisions` | Journal (`action`, `limit`, `offset`) |

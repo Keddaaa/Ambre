@@ -49,5 +49,5 @@ Vérifications de sécurité : aucun secret en dur (`git grep`), aucun `v0/bet` 
 - **Simulation CPMM partielle :** elle ignore les ordres limites du carnet (ADR-003).
 - **Synchro par polling :** pas de WebSocket.
 - **Pas de backtesting**, ni imitation, IA contextuelle, apprentissage.
-- **Rendu du dashboard non contrôlé visuellement :** l'extension navigateur n'était pas connectée ; les pages ont été vérifiées par build, types, lint, HTTP 200 et appels API, pas par capture d'écran.
+- **Rendu du dashboard non contrôlé visuellement (2026-11-01 : toujours le cas) :** l'extension navigateur n'était pas connectée ; les pages ont été vérifiées par build, types, lint, HTTP 200 et appels API, pas par capture d'écran.
 - **Pas d'authentification** sur l'API ; avis `npm audit` non examinés.
