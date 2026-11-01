@@ -44,3 +44,12 @@
 - **Raisons :** aucune baseline validée ne justifie des ordres, même en Mana ; moindre surface d'erreur.
 - **Compromis :** pas de test de bout en bout avec de vrais ordres.
 - **Conséquences :** le réactiver demandera une activation explicite, des garde-fous testés et une nouvelle décision.
+
+## ADR-006 — Navigation autonome en lecture seule, bornée par une liste blanche
+
+- **Problème :** sans information externe, l'estimation ne peut pas dépasser le prix du marché (voir ADR-004) ; Ambre doit pouvoir s'informer et réagir.
+- **Options :** aucune navigation ; navigation totalement libre ; navigation libre dans un périmètre de sources autorisées.
+- **Choix :** liberté de choix (quoi chercher, quand réagir) à l'intérieur d'une liste blanche de réseaux et de sources fournie par le propriétaire. Lecture seule, contenu web traité comme donnée non fiable, consultations journalisées, exécution isolée.
+- **Raisons :** l'information est nécessaire à l'objectif ; la liste blanche limite la surface d'attaque (injection de prompt, fuite) et garde le comportement vérifiable.
+- **Compromis :** une source utile hors liste n'est pas consultée tant qu'elle n'est pas ajoutée ; l'isolation ajoute de la mise en place.
+- **Conséquences :** module non implémenté en 0.1 (voir `ROADMAP.md`). Liste blanche encore à définir. Aucune des interdictions de `AGENTS.md` n'est levée. L'apport réel des sources reste à mesurer hors échantillon.
