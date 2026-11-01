@@ -65,9 +65,10 @@ export function parseApiDate(iso: string | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export function formatRelativeTime(iso: string | null, now: Date): string {
+/** `now` is null until the client clock exists (server prerender must not read the time). */
+export function formatRelativeTime(iso: string | null, now: Date | null): string {
   const d = parseApiDate(iso);
-  if (d === null) return DASH;
+  if (d === null || now === null) return DASH;
   const seconds = Math.round((now.getTime() - d.getTime()) / 1000);
   const abs = Math.abs(seconds);
   if (abs < 60) return "à l'instant";
@@ -83,4 +84,21 @@ export function formatDateTime(iso: string | null): string {
   const d = parseApiDate(iso);
   if (d === null) return DASH;
   return `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+/** Signed interval such as "[−0.0123 ; +0.0045]"; a missing interval is one dash. */
+export function formatInterval(ci: readonly [number, number] | null, digits = 4): string {
+  if (ci === null) return DASH;
+  return `[${formatSignedNumber(ci[0], digits)} ; ${formatSignedNumber(ci[1], digits)}]`;
+}
+
+/** Warning shown above evaluation scores, or null when the sample is large enough. */
+export function sampleNotice(n: number, minSample: number): string | null {
+  if (n === 0) {
+    return "Aucun marché résolu après une décision d'Ambre : aucun score n'est calculable.";
+  }
+  if (n < minSample) {
+    return `Échantillon insuffisant : ${n} marché${n > 1 ? "s" : ""} sur ${minSample} minimum. Ne tirez aucune conclusion.`;
+  }
+  return null;
 }

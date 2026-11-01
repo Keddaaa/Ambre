@@ -5,6 +5,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import type {
   Control,
   DecisionsPage,
+  Evaluation,
   MarketDetail,
   MarketsPage,
   MarketStatus,
@@ -109,6 +110,7 @@ export const keys = {
   markets: (p: MarketsParams) => ["markets", p] as const,
   market: (id: string) => ["market", id] as const,
   decisions: (p: DecisionsParams) => ["decisions", p] as const,
+  evaluation: ["evaluation"] as const,
 };
 
 export function useSystem() {
@@ -194,4 +196,19 @@ export function useHalt() {
 
 export function useResume() {
   return useControlMutation(() => postJson<Control>("/control/resume", { confirm: true }));
+}
+
+/** `data === null` means the API reported that no simulation exists yet. */
+export function useEvaluation() {
+  return useQuery({
+    queryKey: keys.evaluation,
+    queryFn: async () => {
+      try {
+        return await fetchJson<Evaluation>("/evaluation");
+      } catch (e) {
+        if (isNotFoundWith(e, "no active simulation")) return null;
+        throw e;
+      }
+    },
+  });
 }

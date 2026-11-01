@@ -7,6 +7,11 @@
 - `evaluation_engine` (pur) : score de Brier, log loss, calibration par tranche, tailles d'échantillon, différence modèle − prix du marché avec intervalle à 95 %. Voir `docs/EVALUATION.md` et ADR-007.
 - `ambre evaluate` et `GET /evaluation`.
 - `/system` expose `active_strategy`.
+- Page `Évaluation` du dashboard : Brier, log loss, écart modèle − marché avec intervalle, calibration, et avertissement tant que l'échantillon est insuffisant.
+
+### Corrigé
+
+- `useNow` appelait `new Date()` au prérendu : `npm run build` échouait (Cache Components). L'horloge est maintenant `null` jusqu'au montage côté client, et les heures relatives affichent « — » avant.
 
 ### Limites
 

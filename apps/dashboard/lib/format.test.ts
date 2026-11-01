@@ -6,7 +6,9 @@ import {
   formatMana,
   formatNumber,
   formatEstimate,
+  formatInterval,
   formatProb,
+  sampleNotice,
   formatRelativeTime,
   formatSignedMana,
   formatSignedNumber,
@@ -109,5 +111,35 @@ describe("formatEstimate", () => {
   });
   it("omits a missing uncertainty instead of inventing one", () => {
     expect(formatEstimate(0.61, null)).toBe("61.0 %");
+  });
+});
+
+describe("formatInterval", () => {
+  it("renders a missing interval as one dash", () => {
+    expect(formatInterval(null)).toBe("—");
+  });
+  it("renders signed bounds", () => {
+    expect(formatInterval([-0.0123, 0.0045])).toBe("[−0.0123 ; +0.0045]");
+  });
+});
+
+describe("sampleNotice", () => {
+  it("says there is no score when nothing resolved after a decision", () => {
+    expect(sampleNotice(0, 30)).toContain("Aucun marché");
+  });
+  it("warns below the minimum sample", () => {
+    const text = sampleNotice(12, 30);
+    expect(text).toContain("12");
+    expect(text).toContain("30");
+    expect(text).toContain("Ne tirez aucune conclusion");
+  });
+  it("returns null once the sample is sufficient", () => {
+    expect(sampleNotice(30, 30)).toBeNull();
+  });
+});
+
+describe("formatRelativeTime without a clock", () => {
+  it("renders a dash while the client clock is not available yet", () => {
+    expect(formatRelativeTime("2026-10-31T09:05:00Z", null)).toBe("—");
   });
 });
