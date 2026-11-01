@@ -332,3 +332,31 @@ def latest_portfolio_snapshot(session: Session, simulation_id: str) -> Portfolio
         .order_by(PortfolioSnapshotRow.at.desc(), PortfolioSnapshotRow.id.desc())
         .limit(1)
     ).first()
+
+
+def resolved_decision_scores(
+    session: Session, simulation_id: str
+) -> list[tuple[float, float, str]]:
+    """First decision per market that resolved YES/NO strictly after the decision was made.
+
+    Returns ``(market_probability, estimated_probability, resolution)``. Markets without a
+    known ``resolution_at`` are excluded: without it, a leak cannot be ruled out.
+    """
+    stmt = (
+        select(DecisionRow, MarketRow.resolution)
+        .join(MarketRow, MarketRow.id == DecisionRow.market_id)
+        .where(
+            DecisionRow.simulation_id == simulation_id,
+            MarketRow.resolution.in_(("YES", "NO")),
+            MarketRow.resolution_at.is_not(None),
+            DecisionRow.created_at < MarketRow.resolution_at,
+        )
+        .order_by(DecisionRow.created_at, DecisionRow.decision_id)
+    )
+    first: dict[str, tuple[float, float, str]] = {}
+    for decision, resolution in session.execute(stmt).all():
+        first.setdefault(
+            decision.market_id,
+            (decision.market_probability, decision.estimated_probability, str(resolution)),
+        )
+    return list(first.values())

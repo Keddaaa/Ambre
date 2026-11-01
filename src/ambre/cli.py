@@ -1,4 +1,4 @@
-"""`ambre` command line: init-db, sync, cycle, worker, new-simulation.
+"""`ambre` command line: init-db, sync, cycle, worker, evaluate, new-simulation.
 
 Every command first prints ``mode=<MODE> orders_enabled=<bool> db=<masked url>``
 on stdout, then its report as one JSON line per report. Logs go to stderr.
@@ -24,9 +24,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from ambre.config.settings import Settings
 from ambre.data_engine.sync import MarketSyncService, SyncReport
 from ambre.execution_engine.executor import ExecutionModeNotAvailable
+from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.db import make_engine, make_session_factory
 from ambre.integrations.manifold.client import ManifoldClient
-from ambre.pipeline import CycleReport, run_cycle
+from ambre.pipeline import CycleReport, evaluation_for_simulation, run_cycle
 from ambre.portfolio.service import create_simulation
 
 logger = logging.getLogger("ambre.cli")
@@ -158,6 +159,15 @@ def new_simulation(
     return {"simulation_id": sim_id, "name": name, "initial_capital": settings.initial_capital}
 
 
+def evaluate(factory: sessionmaker[Session]) -> dict[str, Any] | None:
+    """Score the active simulation on resolved markets; None when there is no simulation."""
+    with factory() as session:
+        sim = repo.get_current_simulation(session)
+        if sim is None:
+            return None
+        return asdict(evaluation_for_simulation(session, sim.id))
+
+
 # --------------------------------------------------------------------------- entry point
 
 
@@ -171,6 +181,7 @@ def _parser() -> argparse.ArgumentParser:
     work = sub.add_parser("worker", help="loop sync + cycle until Ctrl-C")
     work.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
     work.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
+    sub.add_parser("evaluate", help="Brier, log loss and calibration on resolved markets")
     new = sub.add_parser("new-simulation", help="archive the active simulation, start a new one")
     new.add_argument("--name", required=True)
     return parser
@@ -208,6 +219,13 @@ def main(
             return worker(
                 settings, factory, client_factory, clock, sleep, args.interval, args.max_pages
             )
+        if args.command == "evaluate":
+            result = evaluate(factory)
+            if result is None:
+                logger.error("no active simulation; run `ambre cycle` first")
+                return 1
+            _emit(result)
+            return 0
         if args.command == "new-simulation":
             _emit(new_simulation(settings, factory, clock, args.name))
             return 0

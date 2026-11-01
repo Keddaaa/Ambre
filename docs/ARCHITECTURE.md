@@ -20,7 +20,7 @@ Manifold GET /v0/markets (lecture seule)
 
 ## Règles de dépendance
 
-- Modules **purs** (`domain`, `feature_engine`, `prediction_engine`, `value_engine`, `strategy_engine`, `risk_engine`, `survival_engine`) : ni réseau, ni base, n'importent ni `infrastructure` ni `integrations`.
+- Modules **purs** (`domain`, `feature_engine`, `prediction_engine`, `value_engine`, `strategy_engine`, `risk_engine`, `survival_engine`, `evaluation_engine`) : ni réseau, ni base, n'importent ni `infrastructure` ni `integrations`.
 - Le réseau est confiné à `integrations/manifold`. La persistance est confinée à `infrastructure` (requêtes nommées, aucune logique métier).
 - `pipeline.run_cycle` est le seul endroit qui assemble les modules ; il est idempotent (clé `simulation + marché + snapshot + stratégie`).
 

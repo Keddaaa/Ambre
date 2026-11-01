@@ -185,3 +185,25 @@ class ControlOut(_Out):
     halted: bool
     reason: str | None
     updated_at: datetime | None
+
+
+class CalibrationBinOut(_Out):
+    lower: float
+    upper: float
+    n: int
+    mean_forecast: float
+    observed_rate: float
+
+
+class EvaluationOut(_Out):
+    n: int
+    sufficient_sample: bool
+    min_sample: int
+    model_brier: float | None
+    market_brier: float | None
+    model_log_loss: float | None
+    market_log_loss: float | None
+    brier_difference: float | None
+    brier_difference_ci95: tuple[float, float] | None
+    model_calibration: list[CalibrationBinOut]
+    market_calibration: list[CalibrationBinOut]
