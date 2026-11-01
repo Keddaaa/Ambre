@@ -5,7 +5,7 @@ Ces éléments n'existent **pas** en 0.1. Ils ne sont ni simulés ni représent�
 ## 0.2 (suggéré)
 
 - Historique des paris (`GET /v0/bets`).
-- Métriques Brier et log loss sur les marchés résolus ; courbe de calibration.
+- Courbe de calibration dans le dashboard et métriques par catégorie / horizon (Brier, log loss et calibration par tranche existent déjà, voir `EVALUATION.md`).
 - Backtesting chronologique minimal et protocole de validation reproductible.
 - Exécuter la suite de tests sur PostgreSQL (la migration et un cycle réel sont déjà vérifiés).
 

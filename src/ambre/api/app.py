@@ -22,6 +22,7 @@ from ambre.domain.models import Action, StrategyName
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.db import make_engine, make_session_factory
 from ambre.infrastructure.orm import DecisionRow, MarketRow
+from ambre.pipeline import evaluation_for_simulation
 from ambre.portfolio.service import PortfolioService
 
 NO_SIMULATION = "no active simulation; run `ambre cycle`"
@@ -192,6 +193,12 @@ def create_app(
         if sim is None:
             raise HTTPException(404, NO_SIMULATION)
         return sim
+
+    @app.get("/evaluation", response_model=sc.EvaluationOut)
+    def evaluation(session: Db) -> sc.EvaluationOut:
+        sim = require_simulation(session)
+        report = evaluation_for_simulation(session, sim.id)
+        return sc.EvaluationOut.model_validate(report)
 
     @app.get("/portfolio", response_model=sc.PortfolioOut)
     def portfolio(session: Db) -> sc.PortfolioOut:

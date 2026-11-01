@@ -53,3 +53,12 @@
 - **Raisons :** l'information est nécessaire à l'objectif ; la liste blanche limite la surface d'attaque (injection de prompt, fuite) et garde le comportement vérifiable.
 - **Compromis :** une source utile hors liste n'est pas consultée tant qu'elle n'est pas ajoutée ; l'isolation ajoute de la mise en place.
 - **Conséquences :** module non implémenté en 0.1 (voir `ROADMAP.md`). Liste blanche encore à définir. Aucune des interdictions de `AGENTS.md` n'est levée. L'apport réel des sources reste à mesurer hors échantillon.
+
+## ADR-007 — Évaluation hors échantillon sans fuite
+
+- **Problème :** mesurer le modèle contre le prix du marché sans surévaluer sa qualité.
+- **Options :** scorer tous les marchés résolus ; scorer la dernière décision de chaque marché ; scorer la première décision, seulement si elle précède la résolution.
+- **Choix :** une seule observation par marché (sa première décision), uniquement pour les résolutions `YES`/`NO` dont `resolution_at` est connu et postérieur à la décision.
+- **Raisons :** les décisions tardives se rapprochent du prix final et gonflent le score ; une résolution sans date ne permet pas d'exclure une fuite ; une observation par marché évite de compter plusieurs fois la même issue.
+- **Compromis :** échantillon petit au début ; l'intervalle est une approximation normale, peu fiable sous ~30 marchés (`sufficient_sample` reste faux en dessous).
+- **Conséquences :** aucune conclusion d'avantage tant que l'échantillon est insuffisant. Le backtesting complet reste à faire.

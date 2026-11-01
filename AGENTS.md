@@ -21,7 +21,7 @@ Les autres documents de `docs/` décrivent l'état du code. Ils ne dupliquent pa
 | `integrations/manifold` | Client HTTP en lecture seule, mapping JSON → modèles | non (réseau) |
 | `infrastructure` | SQLAlchemy, dépôts, sessions | non (base) |
 | `data_engine` | Synchronisation incrémentale | non |
-| `feature_engine`, `prediction_engine`, `value_engine`, `strategy_engine`, `risk_engine`, `survival_engine` | Calculs | **oui** |
+| `feature_engine`, `prediction_engine`, `value_engine`, `strategy_engine`, `risk_engine`, `survival_engine`, `evaluation_engine` | Calculs | **oui** |
 | `portfolio`, `execution_engine` | Ledger, positions, exécuteur papier | non |
 | `pipeline.py`, `cli.py`, `api/` | Orchestration, CLI, FastAPI | non |
 

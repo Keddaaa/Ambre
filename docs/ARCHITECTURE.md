@@ -15,12 +15,13 @@ Manifold GET /v0/markets (lecture seule)
   → risk_engine/risk.py            plafonds, impact CPMM, edge minimal
   → survival_engine/survival.py    état opérationnel
   → execution_engine + portfolio   exécution papier atomique, ledger, positions
+  → evaluation_engine/metrics.py   Brier, log loss, calibration (hors cycle : `ambre evaluate`, `/evaluation`)
   → journal des décisions → api/ → apps/dashboard
 ```
 
 ## Règles de dépendance
 
-- Modules **purs** (`domain`, `feature_engine`, `prediction_engine`, `value_engine`, `strategy_engine`, `risk_engine`, `survival_engine`) : ni réseau, ni base, n'importent ni `infrastructure` ni `integrations`.
+- Modules **purs** (`domain`, `feature_engine`, `prediction_engine`, `value_engine`, `strategy_engine`, `risk_engine`, `survival_engine`, `evaluation_engine`) : ni réseau, ni base, n'importent ni `infrastructure` ni `integrations`.
 - Le réseau est confiné à `integrations/manifold`. La persistance est confinée à `infrastructure` (requêtes nommées, aucune logique métier).
 - `pipeline.run_cycle` est le seul endroit qui assemble les modules ; il est idempotent (clé `simulation + marché + snapshot + stratégie`).
 

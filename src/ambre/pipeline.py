@@ -26,6 +26,7 @@ from ambre.domain.models import (
     SurvivalAssessment,
     SurvivalState,
 )
+from ambre.evaluation_engine.metrics import EvaluationReport, ScoredForecast, evaluate
 from ambre.execution_engine.executor import DecisionDraft, ExecutionGate, PaperExecutor
 from ambre.feature_engine.features import extract_features
 from ambre.infrastructure import repositories as repo
@@ -304,3 +305,12 @@ def run_cycle(session: Session, settings: Settings, now: datetime) -> CycleRepor
 
     c.portfolio.record_snapshot(view, c.peak(view), survival, now)
     return report
+
+
+def evaluation_for_simulation(session: Session, simulation_id: str) -> EvaluationReport:
+    """Score the model and the market price on markets that resolved after our first decision."""
+    scored = [
+        ScoredForecast(market_probability=q, estimated_probability=p, outcome=res == "YES")
+        for q, p, res in repo.resolved_decision_scores(session, simulation_id)
+    ]
+    return evaluate(scored)
