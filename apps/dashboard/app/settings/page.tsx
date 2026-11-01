@@ -79,8 +79,12 @@ function EmergencyStop({ system }: { system: SystemStatus }) {
               disabled={halt.isPending || !reasonValid}
               onClick={() => {
                 resume.reset();
+                // Disarm only on success: after a failure the stop is not in effect, so the form stays armed.
                 halt.mutate(trimmed, {
-                  onSettled: () => setArmed(false),
+                  onSuccess: () => {
+                    setArmed(false);
+                    setReason("");
+                  },
                 });
               }}
             >

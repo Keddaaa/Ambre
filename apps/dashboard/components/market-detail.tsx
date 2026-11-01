@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useMarket } from "@/lib/api";
-import { formatDateTime, formatMana, formatNumber, formatProb } from "@/lib/format";
+import { formatDateTime, formatEstimate, formatMana, formatNumber, formatProb } from "@/lib/format";
 
 export function MarketDetail({ id }: { id: string }) {
   const detail = useMarket(id);
@@ -28,7 +28,10 @@ export function MarketDetail({ id }: { id: string }) {
       </Link>
       <QueryState query={detail} empty="Marché introuvable.">
         {({ market, snapshots, decisions }) => {
-          const last = snapshots.length ? snapshots[snapshots.length - 1] : null;
+          const last = snapshots.reduce<(typeof snapshots)[number] | null>(
+            (acc, s) => (acc === null || s.observed_at > acc.observed_at ? s : acc),
+            null,
+          );
           return (
             <>
               <div className="flex flex-col gap-2">
@@ -102,7 +105,7 @@ export function MarketDetail({ id }: { id: string }) {
                               {formatProb(d.market_probability)}
                             </TableCell>
                             <TableCell className="text-right font-mono tabular-nums">
-                              {formatProb(d.estimated_probability)} ± {formatProb(d.uncertainty)}
+                              {formatEstimate(d.estimated_probability, d.uncertainty)}
                             </TableCell>
                             <TableCell>{d.execution_status}</TableCell>
                             <TableCell className="max-w-xs truncate" title={d.reasons.join(" · ")}>

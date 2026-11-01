@@ -17,7 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDecisions } from "@/lib/api";
-import { formatDateTime, formatNumber, formatProb, formatSignedMana } from "@/lib/format";
+import { formatDateTime, formatEstimate, formatNumber, formatProb, formatSignedMana } from "@/lib/format";
 
 const LIMIT = 50;
 const ACTIONS: { value: string | undefined; label: string }[] = [
@@ -88,7 +88,7 @@ export default function JournalPage() {
               <TableBody>
                 {page.items.map((d) => {
                   const placed = d.execution_status === "SIMULATED";
-                  const pnl = d.payout !== null ? d.payout - d.stake : null;
+                  const pnl = placed && d.payout !== null ? d.payout - d.stake : null;
                   return (
                     <TableRow key={d.decision_id}>
                       <TableCell>{formatDateTime(d.created_at)}</TableCell>
@@ -107,7 +107,7 @@ export default function JournalPage() {
                         {formatProb(d.market_probability)}
                       </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
-                        {formatProb(d.estimated_probability)} ± {formatProb(d.uncertainty)}
+                        {formatEstimate(d.estimated_probability, d.uncertainty)}
                       </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
                         {formatProb(d.conservative_probability)}
