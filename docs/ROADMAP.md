@@ -7,7 +7,7 @@ Ces éléments n'existent **pas** en 0.1. Ils ne sont ni simulés ni représent�
 - Historique des paris (`GET /v0/bets`).
 - Métriques Brier et log loss sur les marchés résolus ; courbe de calibration.
 - Backtesting chronologique minimal et protocole de validation reproductible.
-- Vérification de la migration PostgreSQL (Docker).
+- Exécuter la suite de tests sur PostgreSQL (la migration et un cycle réel sont déjà vérifiés).
 
 ## Navigation et veille autonomes (nécessité)
 

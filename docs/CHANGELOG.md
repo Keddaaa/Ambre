@@ -45,7 +45,7 @@ Vérifications de sécurité : aucun secret en dur (`git grep`), aucun `v0/bet` 
 ### Problèmes connus
 
 - **Baseline non validée :** les opportunités sont théoriques ; aucune mesure hors échantillon (ADR-004).
-- **PostgreSQL non testé :** Docker est absent de cette machine ; la migration n'a pas été exécutée.
+- **PostgreSQL vérifié partiellement (2026-11-01, WSL2 + Docker Desktop, PostgreSQL 16) :** `alembic upgrade head`, `alembic check` (aucun écart), `downgrade base` puis `upgrade head`, et un cycle `sync` + `cycle` réel (1022 marchés, 103 décisions, 42 positions papier) passent. La suite de tests reste exécutée sur SQLite uniquement.
 - **Simulation CPMM partielle :** elle ignore les ordres limites du carnet (ADR-003).
 - **Synchro par polling :** pas de WebSocket.
 - **Pas de backtesting**, ni imitation, IA contextuelle, apprentissage.

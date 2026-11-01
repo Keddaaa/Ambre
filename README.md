@@ -39,7 +39,7 @@ docker compose up -d
 DATABASE_URL=postgresql+psycopg://ambre:<mot de passe>@localhost:5432/ambre uv run ambre init-db
 ```
 
-La migration PostgreSQL n'a pas été vérifiée localement (voir `docs/CHANGELOG.md`).
+La migration et un cycle réel ont été vérifiés sur PostgreSQL 16 ; les tests tournent sur SQLite (voir `docs/CHANGELOG.md`).
 
 ## Tests
 

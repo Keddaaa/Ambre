@@ -15,8 +15,8 @@
 - **Options :** PostgreSQL obligatoire ; SQLite seul ; SQLite par défaut avec PostgreSQL optionnel.
 - **Choix :** SQLite par défaut (`var/ambre.db`), PostgreSQL 16 via `docker-compose.yml`, uniquement des types SQLAlchemy portables.
 - **Raisons :** aucun prérequis pour tester ; migration identique sur les deux bases en principe.
-- **Compromis :** la migration PostgreSQL n'a pas été exécutée localement (Docker absent).
-- **Conséquences :** à vérifier avant tout usage PostgreSQL.
+- **Compromis :** la suite de tests tourne sur SQLite ; PostgreSQL est vérifié par migration et cycle réel (voir `docs/CHANGELOG.md`, 2026-11-01).
+- **Conséquences :** ne pas supposer de couverture PostgreSQL dans la CI sans l'y ajouter.
 
 ## ADR-003 — Remplissage CPMM sur le pool seul, frais à 0
 
