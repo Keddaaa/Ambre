@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useDecisions, usePortfolio, usePortfolioHistory, useSystem } from "@/lib/api";
+import { usePortfolio, usePortfolioHistory, useSystem } from "@/lib/api";
 import {
   formatDateTime,
   formatDrawdown,
@@ -23,9 +23,11 @@ import {
   formatSignedMana,
 } from "@/lib/format";
 import type { Portfolio, SystemStatus } from "@/lib/types";
+import { useNow } from "@/lib/use-now";
 import Link from "next/link";
 
 function Alerts({ portfolio, system }: { portfolio: Portfolio | null; system: SystemStatus | undefined }) {
+  const now = useNow();
   const items: React.ReactNode[] = [];
   if (system?.halted) {
     items.push(
@@ -45,7 +47,7 @@ function Alerts({ portfolio, system }: { portfolio: Portfolio | null; system: Sy
   if (system && system.data_age_seconds !== null && system.data_age_seconds > system.survival.max_data_age_seconds) {
     items.push(
       <Alert key="stale" title="Données périmées">
-        Dernière synchro {formatRelativeTime(system.last_sync_at, new Date())} (limite{" "}
+        Dernière synchro {formatRelativeTime(system.last_sync_at, now)} (limite{" "}
         {system.survival.max_data_age_seconds} s). Le système observe sans miser.
       </Alert>,
     );
@@ -62,12 +64,10 @@ function Alerts({ portfolio, system }: { portfolio: Portfolio | null; system: Sy
 }
 
 export default function OverviewPage() {
+  const now = useNow();
   const portfolio = usePortfolio();
   const history = usePortfolioHistory();
   const system = useSystem();
-  // The API exposes no "active strategy" field: read it from the most recent decision.
-  const latestDecision = useDecisions({ limit: 1, offset: 0 });
-  const lastStrategy = latestDecision.data?.items[0]?.strategy ?? null;
 
   return (
     <>
@@ -125,11 +125,11 @@ export default function OverviewPage() {
                 />
                 <Stat label="Positions ouvertes" value={formatNumber(p.open_positions.length, 0)} />
                 <Stat
-                  label="Stratégie (dernière décision)"
-                  value={lastStrategy ?? "—"}
+                  label="Stratégie active"
+                  value={system.data?.active_strategy ?? "—"}
                   hint={
                     system.data
-                      ? `${formatNumber(system.data.decisions_total, 0)} décisions · dernier cycle ${formatRelativeTime(system.data.last_cycle_at, new Date())}`
+                      ? `${formatNumber(system.data.decisions_total, 0)} décisions · dernier cycle ${formatRelativeTime(system.data.last_cycle_at, now)}`
                       : undefined
                   }
                 />
@@ -189,7 +189,7 @@ export default function OverviewPage() {
                               {formatMana(pos.current_value)}
                             </TableCell>
                             <TableCell title={formatDateTime(pos.opened_at)}>
-                              {formatRelativeTime(pos.opened_at, new Date())}
+                              {formatRelativeTime(pos.opened_at, now)}
                             </TableCell>
                           </TableRow>
                         ))}

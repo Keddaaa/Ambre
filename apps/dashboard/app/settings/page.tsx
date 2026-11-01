@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useHalt, useResume, useSystem } from "@/lib/api";
+import { useNow } from "@/lib/use-now";
 import { formatDateTime, formatNumber, formatProb, formatRelativeTime } from "@/lib/format";
 import type { SystemStatus } from "@/lib/types";
 
@@ -106,6 +107,7 @@ function EmergencyStop({ system }: { system: SystemStatus }) {
 }
 
 export default function SettingsPage() {
+  const now = useNow();
   const system = useSystem();
 
   return (
@@ -136,7 +138,7 @@ export default function SettingsPage() {
               <CardContent>
                 <Row
                   label="Dernière synchro"
-                  value={`${formatDateTime(s.last_sync_at)} (${formatRelativeTime(s.last_sync_at, new Date())})`}
+                  value={`${formatDateTime(s.last_sync_at)} (${formatRelativeTime(s.last_sync_at, now)})`}
                 />
                 <Row label="Âge des données" value={s.data_age_seconds === null ? "—" : `${formatNumber(s.data_age_seconds, 0)} s`} />
                 <Row label="Dernier cycle" value={formatDateTime(s.last_cycle_at)} />

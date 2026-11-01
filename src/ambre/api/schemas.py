@@ -28,6 +28,7 @@ class SystemOut(_Out):
     data_age_seconds: float | None
     last_cycle_at: datetime | None
     decisions_total: int
+    active_strategy: str
     risk: RiskConfig
     survival: SurvivalConfig
 

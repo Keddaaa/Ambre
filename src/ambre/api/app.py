@@ -18,7 +18,7 @@ from ambre import __version__
 from ambre.api import schemas as sc
 from ambre.config.settings import Settings, get_settings
 from ambre.data_engine.sync import SYNC_KEY
-from ambre.domain.models import Action
+from ambre.domain.models import Action, StrategyName
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.db import make_engine, make_session_factory
 from ambre.infrastructure.orm import DecisionRow, MarketRow
@@ -103,6 +103,7 @@ def create_app(
             data_age_seconds=(clock() - last_ok).total_seconds() if last_ok else None,
             last_cycle_at=last_cycle.at if last_cycle else None,
             decisions_total=repo.count_decisions(session, sim_id) if sim_id else 0,
+            active_strategy=StrategyName.VALUE_HUNTER.value,
             risk=cfg.risk,
             survival=cfg.survival,
         )
