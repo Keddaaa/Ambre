@@ -15,6 +15,7 @@ Manifold GET /v0/markets (lecture seule)
   → risk_engine/risk.py            plafonds, impact CPMM, edge minimal
   → survival_engine/survival.py    état opérationnel
   → execution_engine + portfolio   exécution papier atomique, ledger, positions
+  → evaluation_engine/metrics.py   Brier, log loss, calibration (hors cycle : `ambre evaluate`, `/evaluation`)
   → journal des décisions → api/ → apps/dashboard
 ```
 

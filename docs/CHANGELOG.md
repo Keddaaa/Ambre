@@ -1,5 +1,17 @@
 # Changelog
 
+## Non publié (0.2 en cours)
+
+### Ajouté
+
+- `evaluation_engine` (pur) : score de Brier, log loss, calibration par tranche, tailles d'échantillon, différence modèle − prix du marché avec intervalle à 95 %. Voir `docs/EVALUATION.md` et ADR-007.
+- `ambre evaluate` et `GET /evaluation`.
+- `/system` expose `active_strategy`.
+
+### Limites
+
+- Sur la base de test réelle (2026-11-01), `n = 0` : tous les marchés résolus l'étaient déjà avant la première décision. Aucun résultat n'est donc disponible, et aucun n'est inventé.
+
 ## 0.1.0 — 2026-10-31
 
 ### Ajouté
