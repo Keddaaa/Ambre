@@ -74,6 +74,7 @@ def test_system_reports_paper_and_orders_disabled(populated: sessionmaker[Sessio
     assert body["survival"]["max_data_age_seconds"] == 900
     assert body["last_cycle_at"] is not None
     assert body["decisions_total"] > 0
+    assert body["active_strategy"] == "VALUE_HUNTER"
 
 
 def test_system_empty_db(factory: sessionmaker[Session]) -> None:
@@ -82,6 +83,7 @@ def test_system_empty_db(factory: sessionmaker[Session]) -> None:
     assert body["data_age_seconds"] is None
     assert body["last_cycle_at"] is None
     assert body["decisions_total"] == 0
+    assert body["active_strategy"] == "VALUE_HUNTER"
 
 
 def test_markets_list_filters_and_null_estimates(populated: sessionmaker[Session]) -> None:

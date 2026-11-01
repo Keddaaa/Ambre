@@ -70,6 +70,11 @@ export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T>
   return (await res.json()) as T;
 }
 
+/** True for a 404 that carries the API's own "not found" detail, not any 404 (proxy, wrong base URL). */
+export function isNotFoundWith(e: unknown, detailPrefix: string): boolean {
+  return e instanceof ApiError && e.status === 404 && e.detail.startsWith(detailPrefix);
+}
+
 /** Same as fetchJson but resolves to null on 404 (e.g. no simulation yet). */
 async function fetchJsonOrNull<T>(path: string): Promise<T | null> {
   try {
@@ -144,7 +149,15 @@ export function useMarkets(params: MarketsParams) {
 export function useMarket(id: string) {
   return useQuery({
     queryKey: keys.market(id),
-    queryFn: () => fetchJson<MarketDetail>(`/markets/${encodeURIComponent(id)}`),
+    // `data === null` means the API itself reported an unknown market id; any other 404 is an error.
+    queryFn: async () => {
+      try {
+        return await fetchJson<MarketDetail>(`/markets/${encodeURIComponent(id)}`);
+      } catch (e) {
+        if (isNotFoundWith(e, "unknown market")) return null;
+        throw e;
+      }
+    },
   });
 }
 

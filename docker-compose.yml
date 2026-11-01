@@ -1,0 +1,22 @@
+# PostgreSQL optionnel pour AMBRE. SQLite reste la base par défaut (aucun Docker requis).
+# Identifiants pris dans .env (voir .env.example) ; aucune valeur secrète n'est versionnée.
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ambre}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?définir POSTGRES_PASSWORD dans .env}
+      POSTGRES_DB: ${POSTGRES_DB:-ambre}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ambre_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  ambre_pgdata:

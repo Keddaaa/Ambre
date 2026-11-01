@@ -31,6 +31,12 @@ export function formatSignedNumber(x: number | null, digits = 2): string {
 export function formatProb(x: number | null): string {
   return x === null ? DASH : `${fixed(x * 100, 1, false)} %`;
 }
+/** Estimate with its uncertainty; a missing estimate is one dash, a missing uncertainty is left out. */
+export function formatEstimate(p: number | null, u: number | null): string {
+  if (p === null) return DASH;
+  return u === null ? formatProb(p) : `${formatProb(p)} ± ${formatProb(u)}`;
+}
+
 
 export function formatMana(x: number | null): string {
   return x === null ? DASH : `M ${fixed(x, 2, true)}`;

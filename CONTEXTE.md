@@ -1,6 +1,6 @@
 # AMBRE — Contexte du projet
 
-> Synthèse courte de l'état réel du code au commit `6be2aa5` (branche `feat/ambre-v0.1`).
+> Synthèse courte de l'état réel du code (v0.1.0).
 > Pour le détail : la spec (`docs/superpowers/specs/2026-10-31-ambre-master-spec.md`) et le plan (`docs/superpowers/plans/2026-10-31-ambre-v0.1-foundation.md`).
 > Pour l'avancement : `REPRISE.md`.
 
@@ -25,7 +25,7 @@ Manifold API (GET /v0/markets, lecture seule)
   → moteur de risque (plafonds, impact CPMM, edge minimal)     risk_engine/risk.py
   → moteur de survie (état opérationnel)                       survival_engine/survival.py
   → exécution papier + ledger + positions (idempotent)         execution_engine/, portfolio/
-  → journal des décisions → API FastAPI → dashboard            api/, apps/dashboard (en cours)
+  → journal des décisions → API FastAPI → dashboard            api/, apps/dashboard
 ```
 
 ## Modules en place (`src/ambre/`)
@@ -81,7 +81,7 @@ Les modules de calcul (valeur, risque, survie, prédiction, features, stratégie
 - **Backend :** Python 3.12 (géré par uv), FastAPI, Pydantic v2, HTTPX, SQLAlchemy 2, Alembic.
 - **Base de données :** SQLite par défaut, PostgreSQL prévu via Docker Compose.
 - **Tests :** pytest, Hypothesis ; lint et types avec ruff et mypy strict.
-- **Frontend (en cours) :** Next.js, TypeScript strict, Tailwind, shadcn/ui, TanStack Query, Recharts.
+- **Frontend :** Next.js, TypeScript strict, Tailwind, shadcn/ui, TanStack Query, Recharts.
 
 ## Démarrer
 
@@ -92,6 +92,7 @@ uv run ambre sync --max-pages 2
 uv run ambre cycle            # ou: uv run ambre worker --interval 300
 uv run uvicorn ambre.api.app:app --port 8000
 uv run pytest -q              # 260 tests
+cd apps/dashboard && npm install && npm run dev   # http://localhost:3000
 ```
 
 ## Limites connues (v0.1)

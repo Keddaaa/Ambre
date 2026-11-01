@@ -38,6 +38,7 @@ export interface SystemStatus {
   data_age_seconds: number | null;
   last_cycle_at: string | null;
   decisions_total: number;
+  active_strategy: string;
   risk: RiskConfig;
   survival: SurvivalConfig;
 }

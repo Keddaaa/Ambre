@@ -5,6 +5,7 @@ import {
   formatDrawdown,
   formatMana,
   formatNumber,
+  formatEstimate,
   formatProb,
   formatRelativeTime,
   formatSignedMana,
@@ -95,5 +96,18 @@ describe("formatDateTime", () => {
     expect(formatDateTime("2026-10-31T09:05:00Z")).toBe("2026-10-31 09:05 UTC");
     expect(formatDateTime("2026-10-31T09:05:00")).toBe("2026-10-31 09:05 UTC");
     expect(formatDateTime(null)).toBe("—");
+  });
+});
+
+describe("formatEstimate", () => {
+  it("renders a single dash when the estimate is missing", () => {
+    expect(formatEstimate(null, null)).toBe("—");
+    expect(formatEstimate(null, 0.05)).toBe("—");
+  });
+  it("renders the estimate with its uncertainty", () => {
+    expect(formatEstimate(0.61, 0.05)).toBe("61.0 % ± 5.0 %");
+  });
+  it("omits a missing uncertainty instead of inventing one", () => {
+    expect(formatEstimate(0.61, null)).toBe("61.0 %");
   });
 });
