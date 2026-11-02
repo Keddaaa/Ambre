@@ -1,4 +1,4 @@
-"""`ambre` command line: init-db, sync, cycle, worker, evaluate, new-simulation.
+"""`ambre` command line: init-db, sync, cycle, worker, research, evaluate, new-simulation.
 
 Every command first prints ``mode=<MODE> orders_enabled=<bool> db=<masked url>``
 on stdout, then its report as one JSON line per report. Logs go to stderr.
@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -27,6 +28,10 @@ from ambre.execution_engine.executor import ExecutionModeNotAvailable
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.db import make_engine, make_session_factory
 from ambre.integrations.manifold.client import ManifoldClient
+from ambre.intelligence.connectors import CONNECTORS, build_providers
+from ambre.intelligence.planning import load_gazetteer
+from ambre.intelligence.registry import load_registry
+from ambre.intelligence.service import research_pass
 from ambre.pipeline import CycleReport, evaluation_for_simulation, run_cycle
 from ambre.portfolio.service import create_simulation
 
@@ -37,12 +42,17 @@ DEFAULT_INTERVAL_SECONDS = 300
 DEFAULT_MAX_PAGES = 5
 
 ClientFactory = Callable[[Settings], ManifoldClient]
+HttpFactory = Callable[[], httpx.AsyncClient]
 Clock = Callable[[], datetime]
 Sleep = Callable[[float], None]
 
 
 def default_client_factory(settings: Settings) -> ManifoldClient:
     return ManifoldClient(settings.manifold_base_url)
+
+
+def default_http_factory() -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=30.0)
 
 
 def utc_now() -> datetime:
@@ -151,6 +161,46 @@ def worker(
         return 0
 
 
+def research_once(
+    settings: Settings,
+    factory: sessionmaker[Session],
+    clock: Clock,
+    http_factory: HttpFactory,
+) -> dict[str, Any]:
+    """One research pass in one transaction (commit on success, roll back on any exception).
+
+    Read-only toward every provider, writes only the intelligence tables, never a decision.
+    No HTTP client is created when no enabled provider has a connector.
+    """
+    registry = load_registry(settings.providers_path)
+    gazetteer = load_gazetteer(settings.gazetteer_path)
+    now = clock()
+
+    async def _run(session: Session) -> dict[str, Any]:
+        needs_http = any(c.id in CONNECTORS for c in registry.enabled())
+        http = http_factory() if needs_http else None
+        try:
+            providers = build_providers(registry, http, clock) if http is not None else {}
+            report = await research_pass(
+                session, settings, now, registry=registry, providers=providers, gazetteer=gazetteer
+            )
+        finally:
+            if http is not None:
+                await http.aclose()
+        out = asdict(report)
+        out["markets_without_information"] = sorted(set(out["markets_without_information"]))
+        return out
+
+    with factory() as session:
+        try:
+            result = asyncio.run(_run(session))
+            session.commit()
+        except BaseException:
+            session.rollback()
+            raise
+    return result
+
+
 def new_simulation(
     settings: Settings, factory: sessionmaker[Session], clock: Clock, name: str
 ) -> dict[str, Any]:
@@ -181,6 +231,9 @@ def _parser() -> argparse.ArgumentParser:
     work = sub.add_parser("worker", help="loop sync + cycle until Ctrl-C")
     work.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
     work.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
+    sub.add_parser(
+        "research", help="one information-seeking pass (read-only, never places a bet)"
+    )
     sub.add_parser("evaluate", help="Brier, log loss and calibration on resolved markets")
     new = sub.add_parser("new-simulation", help="archive the active simulation, start a new one")
     new.add_argument("--name", required=True)
@@ -193,6 +246,7 @@ def main(
     client_factory: ClientFactory = default_client_factory,
     clock: Clock = utc_now,
     sleep: Sleep = time.sleep,
+    http_factory: HttpFactory = default_http_factory,
 ) -> int:
     args = _parser().parse_args(argv)
     logging.basicConfig(
@@ -219,6 +273,9 @@ def main(
             return worker(
                 settings, factory, client_factory, clock, sleep, args.interval, args.max_pages
             )
+        if args.command == "research":
+            _emit(research_once(settings, factory, clock, http_factory))
+            return 0
         if args.command == "evaluate":
             result = evaluate(factory)
             if result is None:
