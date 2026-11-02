@@ -29,11 +29,11 @@ from statistics import NormalDist
 
 from ambre.config.settings import PredictionConfig
 from ambre.domain.similarity import cluster_texts
-from ambre.evaluation_engine.calibration import DEFAULT_MIN_N, PlattCalibrator
 from ambre.evaluation_engine.history import PriceHistory, price_at
 from ambre.evaluation_engine.metrics import CalibrationBin, brier_score, calibration_bins, log_loss
 from ambre.feature_engine.features import FeatureVector
 from ambre.prediction_engine.baselines import BaseRateShrinkage
+from ambre.prediction_engine.calibration import DEFAULT_MIN_N, PlattCalibrator
 
 DEFAULT_HORIZONS_DAYS = (1, 3, 7, 30)
 MARKET = "market_price"

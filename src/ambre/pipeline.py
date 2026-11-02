@@ -40,7 +40,8 @@ from ambre.portfolio.service import (
     create_simulation,
     mark_simulation_dead,
 )
-from ambre.prediction_engine.baselines import BaseRateShrinkage
+from ambre.prediction_engine.baselines import BaseRateShrinkage, ProbabilityModel
+from ambre.prediction_engine.recalibration import RecalibratedPrice
 from ambre.risk_engine.risk import PortfolioView, RiskEngine
 from ambre.strategy_engine.strategies import P_CONS_MAX, P_CONS_MIN, ValueHunter
 from ambre.survival_engine.survival import SurvivalInputs, assess_survival, is_failure
@@ -150,7 +151,7 @@ class _Cycle:
     def evaluate_markets(
         self,
         report: CycleReport,
-        model: BaseRateShrinkage,
+        model: ProbabilityModel,
         view: PortfolioView,
         survival: SurvivalAssessment,
     ) -> PortfolioView:
@@ -210,7 +211,7 @@ class _Cycle:
         snap: MarketSnapshot,
         snapshot_id: int,
         key: str,
-        model: BaseRateShrinkage,
+        model: ProbabilityModel,
         view: PortfolioView,
         survival: SurvivalAssessment,
     ) -> ExecutionStatus:
@@ -300,14 +301,25 @@ def run_cycle(session: Session, settings: Settings, now: datetime) -> CycleRepor
         mark_simulation_dead(session, sim.id, reason, now)
         logger.error("simulation %s marked DEAD: %s", sim.id, reason)
     else:
-        model = BaseRateShrinkage.fit(
-            repo.resolved_binary_outcomes(session, before=now), settings.prediction
-        )
+        model = build_model(session, settings, now)
         report.model_version = model.version
         view = c.evaluate_markets(report, model, view, survival)
 
     c.portfolio.record_snapshot(view, c.peak(view), survival, now)
     return report
+
+
+def build_model(session: Session, settings: Settings, now: datetime) -> ProbabilityModel:
+    """The probability model the configuration asks for.
+
+    The default fits the base-rate baseline on the markets resolved before ``now``. The
+    recalibrated price is built from frozen parameters and is never refitted by the cycle.
+    """
+    prediction = settings.prediction
+    if prediction.model == "recalibrated_price":
+        assert prediction.recalibration is not None  # enforced by the configuration itself
+        return RecalibratedPrice(prediction.recalibration, prediction)
+    return BaseRateShrinkage.fit(repo.resolved_binary_outcomes(session, before=now), prediction)
 
 
 def evaluation_for_simulation(session: Session, simulation_id: str) -> EvaluationReport:

@@ -1,11 +1,14 @@
 import math
+from collections.abc import Callable
 
 import pytest
 
-from ambre.evaluation_engine.calibration import PlattCalibrator, logit
+from ambre.prediction_engine.calibration import PlattCalibrator, logit
 
 
-def _data(true_of_q: "callable", grid: list[float], reps: int) -> tuple[list[float], list[bool]]:  # type: ignore[valid-type]
+def _data(
+    true_of_q: Callable[[float], float], grid: list[float], reps: int
+) -> tuple[list[float], list[bool]]:
     """Deterministic outcomes whose frequency at price q is exactly true_of_q(q)."""
     probs: list[float] = []
     outcomes: list[bool] = []
