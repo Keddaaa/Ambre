@@ -95,3 +95,56 @@ providers:
     provider_limits: {per_minute: 500}
     internal_budget: {per_minute: 60}
     freshness_seconds: 300
+
+  # --- News read once and shared by every market (need `news_feed`), never searched per market.
+  spaceflight_news:
+    name: Spaceflight News API v4
+    domain: news
+    status: VERIFIED_LIMITED
+    enabled: true
+    authentication: none
+    verified_on: "2026-11-02"
+    # OpenAPI schema and FAQ read 2026-11-02: no key, "fully free to use for everyone"; no rate
+    # limit and no licence for the article data are published, so the budget stays very low.
+    allow_commercial_use: true
+    provider_limits: {}
+    internal_budget: {min_interval_seconds: 300, per_hour: 12, per_day: 200}
+    reserve_fraction: 0.2
+    freshness_seconds: 900
+    attribution: "Spaceflight News API (The Space Devs); each item names its publisher"
+    capabilities: {news_feed: 0.5}
+
+  # Publisher feeds: the adapter exists (connector rss_feed) but NO feed may be switched on until
+  # the publisher's terms for this use are verified and written in docs/API_CATALOG.md. On
+  # 2026-11-02 the terms pages could not be read (access refused), so each stays UNVERIFIED and
+  # the registry refuses to enable it. The addresses are the ones the publishers advertise and
+  # have not been fetched.
+  bbc_news_world:
+    name: BBC News - World (RSS)
+    domain: news
+    status: UNVERIFIED
+    enabled: false
+    connector: rss_feed
+    endpoint: "https://feeds.bbci.co.uk/news/world/rss.xml"
+    attribution: "BBC News"
+    capabilities: {news_feed: 0.4}
+
+  guardian_world:
+    name: The Guardian - World (RSS)
+    domain: news
+    status: UNVERIFIED
+    enabled: false
+    connector: rss_feed
+    endpoint: "https://www.theguardian.com/world/rss"
+    attribution: "The Guardian"
+    capabilities: {news_feed: 0.4}
+
+  dw_top_stories:
+    name: Deutsche Welle - Top stories (RSS)
+    domain: news
+    status: UNVERIFIED
+    enabled: false
+    connector: rss_feed
+    endpoint: "https://rss.dw.com/rdf/rss-en-top"
+    attribution: "DW"
+    capabilities: {news_feed: 0.4}

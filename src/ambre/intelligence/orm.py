@@ -182,3 +182,19 @@ class IntelFeatureJournalRow(Base):
     market_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
     fingerprint: Mapped[str] = mapped_column(String)
     features: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+
+
+class IntelFeedStateRow(Base):
+    """Where the polling of one news feed or stream stands: the server's validators for a
+    conditional request and the outcome of the last poll. One row per provider."""
+
+    __tablename__ = "intel_feed_state"
+
+    provider_id: Mapped[str] = mapped_column(String, primary_key=True)
+    etag: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_modified: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_polled_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_item_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: newest ``published_at`` already stored: the next poll asks only for what is newer
+    newest_published_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

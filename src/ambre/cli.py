@@ -32,6 +32,8 @@ from ambre.infrastructure.db import make_engine, make_session_factory
 from ambre.integrations.manifold.client import ManifoldClient
 from ambre.intelligence.connectors import CONNECTORS, build_providers
 from ambre.intelligence.coverage import coverage_report
+from ambre.intelligence.models import InfoNeed
+from ambre.intelligence.news_ingest import ingest_news
 from ambre.intelligence.planning import load_gazetteer
 from ambre.intelligence.registry import load_registry
 from ambre.intelligence.scheduler import JobSpec, tick
@@ -155,7 +157,7 @@ def worker(
             except Exception:
                 logger.exception("sync failed; running the cycle anyway")
             research: list[dict[str, Any]] | None = None
-            if settings.intelligence.schedule_research:
+            if settings.intelligence.schedule_research or settings.intelligence.schedule_news:
                 try:
                     research = research_tick(settings, factory, clock, http_factory)
                 except Exception:
@@ -195,7 +197,7 @@ def _research_in_session(
     factory_ = http_factory or default_http_factory
 
     async def _run() -> dict[str, Any]:
-        needs_http = any(c.id in CONNECTORS for c in registry.enabled())
+        needs_http = any((c.connector or c.id) in CONNECTORS for c in registry.enabled())
         http = factory_() if needs_http else None
         try:
             providers = build_providers(registry, http, clock) if http is not None else {}
@@ -216,6 +218,81 @@ def _research_in_session(
         return out
 
     return asyncio.run(_run())
+
+
+def _news_in_session(
+    settings: Settings,
+    session: Session,
+    now: datetime,
+    clock: Clock,
+    http_factory: HttpFactory | None,
+) -> dict[str, Any]:
+    """One shared news ingestion inside ``session`` (the caller commits): every enabled feed is
+    polled once, then the stored articles are associated with every open market. Read-only toward
+    the providers; writes only the intelligence tables, never a decision."""
+    registry = load_registry(settings.providers_path)
+    gazetteer = load_gazetteer(settings.gazetteer_path)
+    factory_ = http_factory or default_http_factory
+
+    async def _run() -> dict[str, Any]:
+        wanted = [c for c in registry.providers_for(InfoNeed.NEWS_FEED)]
+        http = factory_() if wanted else None
+        try:
+            providers = build_providers(registry, http, clock) if http is not None else {}
+            report = await ingest_news(
+                session,
+                settings,
+                now,
+                registry=registry,
+                providers=providers,
+                gazetteer=gazetteer,
+                window_days=settings.intelligence.news_window_days,
+                clock=clock,
+            )
+        finally:
+            if http is not None:
+                await http.aclose()
+        return asdict(report)
+
+    return asyncio.run(_run())
+
+
+def news_once(
+    settings: Settings,
+    factory: sessionmaker[Session],
+    clock: Clock,
+    http_factory: HttpFactory | None = None,
+) -> dict[str, Any]:
+    """One news ingestion in one transaction (commit on success, roll back on any exception)."""
+    with factory() as session:
+        try:
+            result = _news_in_session(settings, session, clock(), clock, http_factory)
+            session.commit()
+        except BaseException:
+            session.rollback()
+            raise
+    return result
+
+
+def news_job(settings: Settings, clock: Clock, http_factory: HttpFactory | None) -> JobSpec:
+    """The scheduled news job. Separate from the research job: neither can delay or fail the
+    other, since the scheduler runs each in its own transaction."""
+
+    def run(session: Session, now: datetime) -> dict[str, Any]:
+        full = _news_in_session(settings, session, now, clock, http_factory)
+        return {
+            "polls": [
+                {k: p.get(k) for k in ("provider", "status", "items", "new", "detail")}
+                for p in full["polls"]
+            ],
+            "new_observations": full["new_observations"],
+            "new_links": full["new_links"],
+            "journaled": full["journaled"],
+            "articles_in_window": full["articles_in_window"],
+            "markets_newly_linked": len(full["markets_newly_linked"]),
+        }
+
+    return JobSpec("news_ingest", settings.intelligence.news_interval_seconds, run)
 
 
 def research_once(
@@ -265,11 +342,17 @@ def research_tick(
     http_factory: HttpFactory | None = None,
 ) -> list[dict[str, Any]]:
     """Run the research job if it is due (persistent schedule, emergency stop, lease, journal)."""
-    spec = research_job(settings, clock, http_factory)
+    jobs: dict[str, JobSpec] = {}
+    if settings.intelligence.schedule_research:
+        spec = research_job(settings, clock, http_factory)
+        jobs[spec.name] = spec
+    if settings.intelligence.schedule_news:
+        news = news_job(settings, clock, http_factory)
+        jobs[news.name] = news
     results = tick(
         factory,
         clock(),
-        {spec.name: spec},
+        jobs,
         lease_seconds=settings.intelligence.job_lease_seconds,
     )
     return [{"job": r.job, "status": r.status, "detail": r.detail} for r in results]
@@ -334,6 +417,9 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("research", help="one information-seeking pass (read-only, never places a bet)")
     sub.add_parser("coverage", help="information coverage of every unresolved market")
     sub.add_parser("scheduler-status", help="scheduled jobs and their recent runs")
+    sub.add_parser(
+        "news-ingest", help="poll every enabled news feed once and associate it with the markets"
+    )
     export = sub.add_parser("vault-export", help="export the Cognitive Vault as Markdown files")
     export.add_argument("--dir", required=True, type=Path)
     sub.add_parser("evaluate", help="Brier, log loss and calibration on resolved markets")
@@ -388,6 +474,9 @@ def main(
             return 0
         if args.command == "coverage":
             _emit(coverage(factory, settings))
+            return 0
+        if args.command == "news-ingest":
+            _emit(news_once(settings, factory, clock, http_factory))
             return 0
         if args.command == "scheduler-status":
             _emit(scheduler_snapshot(factory))

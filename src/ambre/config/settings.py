@@ -77,6 +77,10 @@ class IntelligenceConfig(BaseModel):
     news_timespan: str = "1week"
     news_max_records: int = Field(default=75, ge=1, le=250)
     failure_backoff_cap_seconds: float = Field(default=3600.0, gt=0)
+    # Shared news ingestion: a separate scheduled job, so a failing feed never delays research.
+    schedule_news: bool = True
+    news_interval_seconds: int = Field(default=900, ge=60)
+    news_window_days: int = Field(default=7, ge=1, le=30)
 
 
 def _load_yaml_block(name: str) -> dict[str, Any]:

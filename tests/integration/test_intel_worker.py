@@ -32,6 +32,10 @@ def db_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
             monkeypatch.delenv(key)
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.chdir(tmp_path)
+    # these tests are about the research job alone; news ingestion has its own tests
+    only_research = tmp_path / "only_research.yaml"
+    only_research.write_text("intelligence:\n  schedule_news: false\n")
+    monkeypatch.setenv("AMBRE_CONFIG", str(only_research))
     assert cli.main(["init-db"]) == 0
     return url
 
@@ -219,7 +223,7 @@ def test_scheduling_can_be_switched_off_in_the_configuration(
     db_url: str, capsys: pytest.CaptureFixture[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = tmp_path / "off.yaml"
-    cfg.write_text("intelligence:\n  schedule_research: false\n")
+    cfg.write_text("intelligence:\n  schedule_research: false\n  schedule_news: false\n")
     monkeypatch.setenv("AMBRE_CONFIG", str(cfg))
     h = Harness()
     assert run_worker(h) == 0

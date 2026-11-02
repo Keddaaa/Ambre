@@ -25,6 +25,9 @@ intelligence:
   fetch_limit: 500
   max_markets_scanned: 5000
   schedule_research: true
+  schedule_news: true
+  news_interval_seconds: 900
+  news_window_days: 7
   research_interval_seconds: 600
   job_lease_seconds: 900
   max_calls_per_pass: 6

@@ -12,6 +12,7 @@ from ambre.intelligence.matching import MarketLink
 from ambre.intelligence.models import Observation
 from ambre.intelligence.orm import (
     IntelFeatureJournalRow,
+    IntelFeedStateRow,
     IntelMarketLinkRow,
     IntelObservationRow,
     IntelProviderStateRow,
@@ -227,3 +228,37 @@ def append_feature_journal(
         )
     )
     return True
+
+
+def get_feed_state(session: Session, provider_id: str) -> IntelFeedStateRow | None:
+    return session.get(IntelFeedStateRow, provider_id)
+
+
+def record_feed_poll(
+    session: Session,
+    provider_id: str,
+    now: datetime,
+    *,
+    status: str,
+    item_count: int | None,
+    etag: str | None = None,
+    last_modified: str | None = None,
+    newest_published_at: datetime | None = None,
+) -> IntelFeedStateRow:
+    """Remember a poll. Validators and the newest date only move forward on a good answer, so a
+    failed poll never erases what the next conditional request needs."""
+    row = get_feed_state(session, provider_id)
+    if row is None:
+        row = IntelFeedStateRow(provider_id=provider_id)
+        session.add(row)
+    row.last_polled_at = now
+    row.last_status = status
+    row.last_item_count = item_count
+    if status in ("OK", "EMPTY"):
+        row.etag = etag
+        row.last_modified = last_modified
+        if newest_published_at is not None and (
+            row.newest_published_at is None or newest_published_at > row.newest_published_at
+        ):
+            row.newest_published_at = newest_published_at
+    return row

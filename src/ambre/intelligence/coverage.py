@@ -5,6 +5,7 @@ when no pass has looked at it. The buckets always sum to the total, and every ra
 its denominator, so no percentage can hide the population it is a percentage of.
 """
 
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ambre.config.settings import Settings
 from ambre.infrastructure.orm import MarketRow
+from ambre.intelligence.news_ingest import news_metrics
 from ambre.intelligence.orm import (
     IntelFeatureJournalRow,
     IntelJobRow,
@@ -21,6 +23,7 @@ from ambre.intelligence.orm import (
     IntelObservationRow,
     IntelRequestRow,
 )
+from ambre.intelligence.registry import load_registry
 from ambre.intelligence.states import MarketInfoState
 
 
@@ -151,6 +154,12 @@ def _diagnostics(
     }
     if settings is not None:
         out["capacity"] = _capacity(settings, waiting)
+        out["news"] = news_metrics(
+            session,
+            load_registry(settings.providers_path),
+            datetime.now(UTC),
+            settings.intelligence.news_window_days,
+        )
     return out
 
 

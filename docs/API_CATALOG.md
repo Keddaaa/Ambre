@@ -200,6 +200,42 @@ Conséquence : AMBRE ne peut pas rechercher des mots-clés sur Bluesky sans comp
 
 C'est la source déjà utilisée par `integrations/manifold` (lecture seule).
 
+### `spaceflight_news` — Spaceflight News API v4 (actualités spatiales)
+
+| Champ | Valeur |
+|---|---|
+| Domaine | actualités spatiales (lancements, agences, industrie) |
+| URL officielle | https://api.spaceflightnewsapi.net (produit de The Space Devs) |
+| Documentation | schéma OpenAPI `https://api.spaceflightnewsapi.net/v4/schema/` et FAQ `github.com/TheSpaceDevs/Tutorials/.../faq_SNAPI.md` (lus le 2026-11-02) |
+| Endpoint pertinent | `GET /v4/articles/` (`limit`, `offset` ≤ 10 000, `ordering` = `published_at` / `updated_at`, `published_at_gte`, `search`, `news_site`) |
+| Authentification | aucune (le schéma ne déclare aucun schéma de sécurité) |
+| Accès gratuit | oui : « SNAPI is fully free to use for everyone » (FAQ) |
+| Quota gratuit | **UNKNOWN** : aucune limite publiée ; budget interne volontairement bas (1 requête / 5 min, 12 / h, 200 / jour) |
+| Fraîcheur | une relève toutes les 15 min au plus (fenêtre de fraîcheur) |
+| Historique | pagination par `published_at_lt` au-delà de 10 000 résultats |
+| Champs d'un article | `id`, `title`, `url`, `news_site`, `summary`, `published_at`, `updated_at`, `authors`, `image_url`, `launches`, `events` |
+| Licence | **non publiée** pour les données d'articles ; la FAQ demande seulement un soutien aux usages commerciaux |
+| Restrictions de stockage | **UNKNOWN** : aucune condition lue. AMBRE ne garde que titre, résumé tronqué à 500 caractères, lien, éditeur et dates ; jamais le texte d'un article |
+| Obligation | nommer l'éditeur de chaque article (`news_site`) partout où il est montré |
+| Fiabilité et qualité | agrégateur de titres d'éditeurs spécialisés : un titre est un compte rendu non vérifié |
+| Statut | **VERIFIED_LIMITED**, activé |
+
+Observé (2026-11-02) : 1 requête réelle, HTTP 200, 50 articles de 8 éditeurs (NASA, ESA, SpaceNews, NASASpaceflight, Spaceflight Now, European Spaceflight, SpacePolicyOnline.com, Arstechnica), aucun élément invalide. Le service ne donne **pas** l'heure à laquelle il a vu l'article : `available_at` est l'instant de notre relève, jamais `published_at`.
+
+Limite : la couverture est celle de l'espace. Elle ne sert que les marchés qui parlent de SpaceX, NASA, Blue Origin, etc. (44 marchés ouverts mentionnent un mot-clé spatial sur 1 608).
+
+### Flux RSS d'éditeurs — `bbc_news_world`, `guardian_world`, `dw_top_stories` (NON ACTIVÉS)
+
+L'adaptateur générique (`providers/feed.py`, connecteur `rss_feed`, requêtes conditionnelles `ETag` / `If-Modified-Since`) existe et est testé hors ligne sur des flux écrits à la main. **Aucun flux d'éditeur n'est activé** : le registre refuse d'activer un fournisseur dont le statut est `UNVERIFIED`, et les conditions d'usage n'ont pas pu être confirmées le 2026-11-02.
+
+| Éditeur | Ce qui a été tenté | Ce qui est établi | Décision |
+|---|---|---|---|
+| BBC | page des conditions des flux : accès refusé par l'outil de lecture ; recherche web | sources indirectes et anciennes seulement : usage limité à un site personnel en 2008, puis flux « encouragés » avec attribution « BBC News » ; **conditions actuelles non confirmées** | `UNVERIFIED`, désactivé |
+| The Guardian | page des flux : accès refusé ; recherche web | miroir tiers de ses conditions : usage personnel et non commercial, robots et scrapers soumis à accord ; **règle propre aux flux non confirmée** | `UNVERIFIED`, désactivé |
+| Deutsche Welle | page des flux : accès refusé ; recherche web | **rien** de DW lui-même | `UNVERIFIED`, désactivé |
+
+Les adresses des flux dans `configs/providers.yaml` sont celles que ces éditeurs annoncent habituellement ; elles n'ont pas été interrogées. Pour activer un flux, le propriétaire doit lire les conditions de l'éditeur, compléter cette fiche (usage permis, stockage, attribution), passer le statut à `VERIFIED_*` et fournir un budget interne.
+
 ## Candidats non vérifiés
 
 Fournisseurs du catalogue du propriétaire pour lesquels **aucune fiche n'a été complétée** : Marketaux, finlight, NewsData.io, GNews, NewsAPI, The Guardian, FRED, ECB, Eurostat, World Bank, SEC EDGAR, CoinGecko, Mastodon, Reddit, YouTube Data API, Google Trends, TwitterAPI.io, TheSportsDB, football-data.org, API-Football, OpenLigaDB, StatsBomb Open Data, OpenF1, Jolpica F1, NOAA, Meteostat, NASA POWER, OpenWeatherMap, MET Norway, ACLED, ReliefWeb, HDX, OpenAlex, arXiv, Crossref, WHO GHO, CDC, NASA Open APIs.

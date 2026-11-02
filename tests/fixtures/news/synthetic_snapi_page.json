@@ -1,0 +1,76 @@
+{
+  "count": 5,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 1001,
+      "title": "SpaceX Starship completes first orbital refueling test",
+      "authors": [{"name": "A. Writer", "socials": null}],
+      "url": "https://spaceflight-now.example/2026/11/01/starship-refueling/",
+      "image_url": "https://spaceflight-now.example/img/1001.jpg",
+      "news_site": "Spaceflight Now",
+      "summary": "<p>SpaceX transferred propellant between two <b>Starship</b> vehicles in orbit.</p>",
+      "published_at": "2026-11-01T10:00:00Z",
+      "updated_at": "2026-11-01T10:05:00Z",
+      "featured": false,
+      "launches": [],
+      "events": []
+    },
+    {
+      "id": 1002,
+      "title": "SpaceX Starship completes first orbital refueling test, company says",
+      "authors": [],
+      "url": "https://nsf.example/starship-refueling-test?utm_source=rss",
+      "image_url": "https://nsf.example/img/1002.jpg",
+      "news_site": "NASASpaceflight",
+      "summary": "SpaceX says the refueling demonstration met its objectives.",
+      "published_at": "2026-11-01T12:30:00Z",
+      "updated_at": "2026-11-01T12:30:00Z",
+      "featured": false,
+      "launches": [],
+      "events": []
+    },
+    {
+      "id": 1003,
+      "title": "Blue Origin New Glenn launches second mission",
+      "authors": [],
+      "url": "https://spacenews.example/blue-origin-new-glenn-second-mission",
+      "image_url": "https://spacenews.example/img/1003.jpg",
+      "news_site": "SpaceNews",
+      "summary": "New Glenn lifted off from Cape Canaveral.",
+      "published_at": "2026-11-01T18:00:00Z",
+      "updated_at": "2026-11-01T18:00:00Z",
+      "featured": false,
+      "launches": [],
+      "events": []
+    },
+    {
+      "id": 1004,
+      "title": "An item without a link",
+      "authors": [],
+      "image_url": "https://x.example/img.jpg",
+      "news_site": "Nowhere",
+      "summary": "invalid on purpose",
+      "published_at": "2026-11-01T18:00:00Z",
+      "updated_at": "2026-11-01T18:00:00Z",
+      "featured": false,
+      "launches": [],
+      "events": []
+    },
+    {
+      "id": 1005,
+      "title": "NASA delays Artemis crew mission",
+      "authors": [],
+      "url": "https://spacenews.example/nasa-delays-artemis",
+      "image_url": "https://spacenews.example/img/1005.jpg",
+      "news_site": "SpaceNews",
+      "summary": "",
+      "published_at": "not a date",
+      "updated_at": "2026-11-01T19:00:00Z",
+      "featured": false,
+      "launches": [],
+      "events": []
+    }
+  ]
+}
