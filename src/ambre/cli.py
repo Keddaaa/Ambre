@@ -22,6 +22,7 @@ import httpx
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
+from ambre.cognitive.vault import export_markdown
 from ambre.config.settings import Settings
 from ambre.data_engine.sync import MarketSyncService, SyncReport
 from ambre.execution_engine.executor import ExecutionModeNotAvailable
@@ -201,6 +202,13 @@ def research_once(
     return result
 
 
+def vault_export(factory: sessionmaker[Session], directory: Path) -> dict[str, Any]:
+    """Write the Cognitive Vault as Markdown files. Read-only toward the database."""
+    with factory() as session:
+        written = export_markdown(session, directory)
+    return {"exported": len(written), "directory": str(directory)}
+
+
 def new_simulation(
     settings: Settings, factory: sessionmaker[Session], clock: Clock, name: str
 ) -> dict[str, Any]:
@@ -231,9 +239,9 @@ def _parser() -> argparse.ArgumentParser:
     work = sub.add_parser("worker", help="loop sync + cycle until Ctrl-C")
     work.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
     work.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
-    sub.add_parser(
-        "research", help="one information-seeking pass (read-only, never places a bet)"
-    )
+    sub.add_parser("research", help="one information-seeking pass (read-only, never places a bet)")
+    export = sub.add_parser("vault-export", help="export the Cognitive Vault as Markdown files")
+    export.add_argument("--dir", required=True, type=Path)
     sub.add_parser("evaluate", help="Brier, log loss and calibration on resolved markets")
     new = sub.add_parser("new-simulation", help="archive the active simulation, start a new one")
     new.add_argument("--name", required=True)
@@ -275,6 +283,9 @@ def main(
             )
         if args.command == "research":
             _emit(research_once(settings, factory, clock, http_factory))
+            return 0
+        if args.command == "vault-export":
+            _emit(vault_export(factory, args.dir))
             return 0
         if args.command == "evaluate":
             result = evaluate(factory)

@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 from alembic import context
 
+from ambre.cognitive import orm as _cognitive_orm  # noqa: F401  (registers the tables)
 from ambre.config.settings import Settings
 from ambre.infrastructure.db import make_engine
 from ambre.infrastructure.orm import Base
