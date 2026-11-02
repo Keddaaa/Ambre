@@ -12,12 +12,14 @@ Dernière mise à jour : 2026-11-02. Branche : `feat/backtest`. Mode : PAPER uni
 
 ## Mesure historique (2026-11-02)
 
-1 169 marchés résolus échantillonnés depuis 2023, 78 818 paris, historiques complets. Quatre horizons (1, 3, 7, 30 jours après la création), 416 à 924 marchés comparés par horizon.
+5 663 marchés résolus échantillonnés depuis 2023 (ancres hebdomadaires), 454 951 paris, historiques complets. Quatre horizons (1, 3, 7, 30 jours après la création), 2 419 à 4 850 marchés comparés par horizon. Verdicts corrigés pour 8 comparaisons.
 
-- **Baseline AMBRE contre prix du marché :** écart de ±0,001 de Brier, **inconclusif partout**. L'écart de +0,004 du backtest à 54 marchés ne se retrouve pas : il venait d'un petit échantillon récent.
-- **Prix recalibré (logit, ancré sur l'identité) :** Brier et log loss un peu plus bas aux quatre horizons (−0,002 à −0,003), mais intervalles par grappes contenant zéro. **Pas une amélioration établie** ; les horizons réutilisent les mêmes marchés.
-- **Modèle contextuel :** `NOT_EVALUATED` (aucune caractéristique datée pour des marchés déjà résolus ; rien de fabriqué).
-- Détail, méthode, limites et construction exacte des intervalles : `docs/EVALUATION.md`.
+- **Baseline AMBRE contre prix du marché :** écart de l'ordre de 0,0001 de Brier, **inconclusif partout**. Le +0,004 du backtest à 54 marchés ne se retrouve pas.
+- **Biais constant du prix :** le prix moyen dépasse le taux réel de `YES` de 5 à 8 points, chaque année 2023 à 2026, à tous les horizons.
+- **Prix recalibré :** « better » à 3 jours seulement (−0,0030 de Brier, intervalle corrigé [−0,0056 ; −0,0005], signe stable sur les quatre années). Inconclusif et instable à 1, 7 et 30 jours (2023 est moins bon que le prix à 7 et 30 jours).
+- **Ce n'est pas un rendement.** Frais, profondeur et impact du prix ne sont pas modélisés ; l'échantillon ne contient que des marchés résolus ; une partie du biais peut venir du mélange de questions. Rien ne démontre qu'on gagnerait de l'argent.
+- **Modèle contextuel :** `NOT_EVALUATED` (aucune caractéristique datée pour des marchés déjà résolus).
+- Détail, méthode, limites : `docs/EVALUATION.md`.
 
 ## Constats à garder en tête
 
@@ -30,7 +32,7 @@ Dernière mise à jour : 2026-11-02. Branche : `feat/backtest`. Mode : PAPER uni
 1. Lancer le worker en continu pour remplir le journal de caractéristiques (décision du propriétaire : processus long avec lectures réseau).
 2. Répéter `history-universe` + `history-fetch` périodiquement pour étoffer l'échantillon ; envisager un tirage plus aléatoire que « 25 par ancre ».
 3. Quand le journal contiendra assez de marchés résolus avec caractéristiques datées : moteur d'expériences avec/sans source (même protocole chronologique, mêmes intervalles).
-4. Décider si le prix recalibré mérite un essai en simulation PAPER : à ce jour rien ne le justifie statistiquement.
+4. **Essai en avant** du biais de prix de 5 points : simulation PAPER chronologique sur des marchés encore ouverts, avec frais explicites. La table historique ne suffit pas à justifier une mise, même virtuelle.
 
 ## Décisions en attente du propriétaire
 

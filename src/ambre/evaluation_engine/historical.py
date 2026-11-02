@@ -25,6 +25,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from statistics import NormalDist
 
 from ambre.config.settings import PredictionConfig
 from ambre.domain.similarity import cluster_texts
@@ -40,6 +41,7 @@ BASELINE = "ambre_baseline"
 CALIBRATED = "calibrated_price"
 MIN_CLUSTERS_FOR_VERDICT = 30
 _Z95 = 1.96
+FAMILY_ALPHA = 0.05
 
 
 @dataclass(frozen=True)
@@ -97,7 +99,25 @@ class PairedComparison:
     mean_brier_difference: float | None
     ci95_naive: tuple[float, float] | None
     ci95_clustered: tuple[float, float] | None
+    #: the clustered interval widened for the number of comparisons in the whole report
+    #: (Bonferroni); the verdict rests on this one, so a lucky horizon cannot be called better
+    ci_clustered_family: tuple[float, float] | None
+    n_comparisons: int
     verdict: str  # better | worse | inconclusive
+
+
+@dataclass(frozen=True)
+class YearStability:
+    """One calendar year of decisions: does the price lean one way, and does the gain hold?"""
+
+    year: int
+    n: int
+    mean_price: float
+    yes_rate: float
+    brier_market: float | None
+    brier_calibrated: float | None
+    #: calibrated minus market Brier for that year (negative = calibrated better)
+    mean_brier_difference: float | None
 
 
 @dataclass(frozen=True)
@@ -110,6 +130,11 @@ class HorizonReport:
     scores: list[ModelScore]
     comparisons: list[PairedComparison]
     notes: list[str] = field(default_factory=list)
+    #: logistic recalibration fitted on every observation of the horizon (a, b, n). It describes
+    #: the sample (b < 1: prices too confident; b > 1: not confident enough). It is in-sample
+    #: and is never used to score anything.
+    full_sample_calibration: dict[str, float | int | str] | None = None
+    by_year: list[YearStability] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -179,8 +204,17 @@ def _naive_ci(diffs: Sequence[float]) -> tuple[float, float] | None:
     return (mean - half, mean + half)
 
 
-def _cluster_ci(
-    diffs: Sequence[float], clusters: Sequence[int]
+def family_z(comparisons: int) -> float:
+    """Two-sided critical value when ``comparisons`` intervals are read together (Bonferroni):
+    each is built at level ``alpha / comparisons`` so that the chance of calling any of them
+    different by luck stays near ``alpha``. One comparison gives the usual 1.96."""
+    if comparisons < 1:
+        raise ValueError("at least one comparison")
+    return NormalDist().inv_cdf(1.0 - FAMILY_ALPHA / (2.0 * comparisons))
+
+
+def cluster_interval(
+    diffs: Sequence[float], clusters: Sequence[int], z: float = _Z95
 ) -> tuple[tuple[float, float] | None, int]:
     """Cluster-robust interval of the mean (CR1): the residuals of one cluster are summed before
     squaring, so near-duplicate markets count as one piece of evidence, not several."""
@@ -193,7 +227,7 @@ def _cluster_ci(
     if g < 2:
         return None, g
     variance = (g / (g - 1)) * sum(s * s for s in groups.values()) / (n * n)
-    half = _Z95 * math.sqrt(variance)
+    half = z * math.sqrt(variance)
     return (mean - half, mean + half), g
 
 
@@ -215,12 +249,46 @@ def _cluster_ids(folds: Sequence[Fold], questions: dict[str, str]) -> list[int]:
 # --------------------------------------------------------------------------- evaluation
 
 
+def _stability_by_year(folds: Sequence[Fold]) -> list[YearStability]:
+    """Per calendar year of the decision: how far the price sits from the real YES rate, and
+    whether the recalibrated price kept its gain. A gain that flips sign from one year to the
+    next is not a stable property of the market. Only folds where all three forecasts exist
+    are given, so the same markets are behind every figure."""
+    years: dict[int, list[Fold]] = defaultdict(list)
+    for f in folds:
+        years[f.decision_at.year].append(f)
+    out: list[YearStability] = []
+    for year in sorted(years):
+        rows = years[year]
+        market_sq: list[float] = []
+        calibrated_sq: list[float] = []
+        for f in rows:
+            assert f.calibrated is not None
+            y = 1.0 if f.outcome else 0.0
+            market_sq.append((f.market - y) ** 2)
+            calibrated_sq.append((f.calibrated - y) ** 2)
+        n = len(rows)
+        out.append(
+            YearStability(
+                year=year,
+                n=n,
+                mean_price=sum(f.market for f in rows) / n,
+                yes_rate=sum(1.0 for f in rows if f.outcome) / n,
+                brier_market=sum(market_sq) / n,
+                brier_calibrated=sum(calibrated_sq) / n,
+                mean_brier_difference=(sum(calibrated_sq) - sum(market_sq)) / n,
+            )
+        )
+    return out
+
+
 def _evaluate_horizon(
     horizon: int,
     observations: Sequence[HistoricalObservation],
     exclusions: dict[str, int],
     cfg: PredictionConfig,
     min_calibration_n: int,
+    family_size: int,
 ) -> HorizonReport:
     ordered = sorted(observations, key=lambda o: (o.decision_at, o.market_id))
     folds: list[Fold] = []
@@ -279,7 +347,8 @@ def _evaluate_horizon(
                 (p - (1.0 if o else 0.0)) ** 2 for p, o in zip(series[name], outcomes, strict=True)
             ]
             diffs = [m - k for m, k in zip(sq, market_sq, strict=True)]
-            ci_cluster, n_clusters = _cluster_ci(diffs, clusters)
+            ci_cluster, n_clusters = cluster_interval(diffs, clusters)
+            ci_family, _ = cluster_interval(diffs, clusters, family_z(family_size))
             comparisons.append(
                 PairedComparison(
                     model=name,
@@ -288,16 +357,24 @@ def _evaluate_horizon(
                     mean_brier_difference=sum(diffs) / len(diffs),
                     ci95_naive=_naive_ci(diffs),
                     ci95_clustered=ci_cluster,
-                    verdict=_verdict(ci_cluster, n_clusters),
+                    ci_clustered_family=ci_family,
+                    n_comparisons=family_size,
+                    verdict=_verdict(ci_family, n_clusters),
                 )
             )
 
+    by_year = _stability_by_year(common)
     notes = []
     if len(common) < len(folds):
         notes.append(
             f"{len(folds) - len(common)} early markets had fewer than {min_calibration_n} resolved "
             "markets to learn from: the calibrated price abstained, so they are in no comparison"
         )
+    whole = PlattCalibrator.fit(
+        [o.market_probability for o in ordered],
+        [o.outcome for o in ordered],
+        min_n=min_calibration_n,
+    )
     return HorizonReport(
         horizon_days=horizon,
         n_observations=len(folds),
@@ -307,6 +384,15 @@ def _evaluate_horizon(
         scores=scores,
         comparisons=comparisons,
         notes=notes,
+        by_year=by_year,
+        full_sample_calibration=None
+        if whole is None
+        else {
+            "a": whole.a,
+            "b": whole.b,
+            "n": whole.n,
+            "note": "in-sample description of the horizon, not a forecast; no score uses it",
+        },
     )
 
 
@@ -320,8 +406,9 @@ def evaluate_historical(
     by_horizon: dict[int, list[HistoricalObservation]] = {h: [] for h in exclusions}
     for o in observations:
         by_horizon.setdefault(o.horizon_days, []).append(o)
+    family = max(1, 2 * len(by_horizon))  # two models against the market at every horizon
     horizons = [
-        _evaluate_horizon(h, by_horizon[h], exclusions.get(h, {}), cfg, min_calibration_n)
+        _evaluate_horizon(h, by_horizon[h], exclusions.get(h, {}), cfg, min_calibration_n, family)
         for h in sorted(by_horizon)
     ]
     return HistoricalReport(
@@ -342,7 +429,9 @@ def evaluate_historical(
                 "mean paired squared-error difference +/- 1.96 standard errors; naive = sample "
                 "standard deviation (n-1) over markets, clustered = CR1 over question clusters"
             ),
-            "verdict": f"only with at least {MIN_CLUSTERS_FOR_VERDICT} clusters and an interval "
-            "that excludes zero",
+            "verdict": (
+                f"only with at least {MIN_CLUSTERS_FOR_VERDICT} clusters and a clustered interval, "
+                "widened for the number of comparisons in the report, that excludes zero"
+            ),
         },
     )

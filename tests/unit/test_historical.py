@@ -220,3 +220,66 @@ def test_non_finite_or_out_of_range_prices_cannot_reach_the_scores() -> None:
     )
     with pytest.raises(ValueError):
         build_observations([bad], (1,))
+
+
+# ------------------------------------------------------------------ description of the whole sample
+
+
+def test_the_whole_sample_calibration_describes_over_or_under_confidence() -> None:
+    good = run(world()).horizons[0].full_sample_calibration
+    assert good is not None and good["n"] == 90
+    assert good["b"] == pytest.approx(1.0, abs=0.35)  # prices were built to be calibrated
+    flipped = run(world(calibrated=False)).horizons[0].full_sample_calibration
+    assert flipped is not None and flipped["b"] < 0  # prices point the wrong way
+
+
+def test_the_whole_sample_calibration_is_a_description_not_a_forecast() -> None:
+    h = run(world()).horizons[0]
+    assert h.full_sample_calibration is not None
+    assert "in-sample" in h.full_sample_calibration["note"]  # scores never use it
+
+
+def test_too_few_markets_give_no_whole_sample_calibration() -> None:
+    assert run(world(10)).horizons[0].full_sample_calibration is None
+
+
+# ------------------------------------------------------------------ several comparisons, one report
+
+
+def test_the_critical_value_grows_with_the_number_of_comparisons() -> None:
+    from ambre.evaluation_engine.historical import family_z
+
+    assert family_z(1) == pytest.approx(1.96, abs=0.001)
+    assert family_z(8) == pytest.approx(2.734, abs=0.002)  # Bonferroni: 0.05 / 8 per comparison
+    assert family_z(8) > family_z(2) > family_z(1)
+    with pytest.raises(ValueError):
+        family_z(0)
+
+
+def test_an_interval_that_excludes_zero_alone_can_include_it_once_the_family_is_counted() -> None:
+    from ambre.evaluation_engine.historical import cluster_interval, family_z
+
+    diffs = [-0.02 if i % 2 else 0.0 for i in range(400)]  # mean -0.01
+    clusters = list(range(400))
+    alone, _ = cluster_interval(diffs, clusters, family_z(1))
+    family, _ = cluster_interval(diffs, clusters, family_z(60))
+    assert alone is not None and alone[1] < 0  # significant on its own
+    assert family is not None and family[1] > alone[1]  # but wider once 60 are being tried
+
+
+def test_the_verdict_uses_the_family_adjusted_interval_and_reports_both() -> None:
+    h = run(world()).horizons[0]
+    for c in h.comparisons:
+        assert c.ci95_clustered is not None and c.ci_clustered_family is not None
+        assert c.ci_clustered_family[0] <= c.ci95_clustered[0]
+        assert c.ci_clustered_family[1] >= c.ci95_clustered[1]
+        assert c.n_comparisons == 2  # two models against the market at one horizon
+
+
+def test_the_report_says_how_stable_the_result_is_from_one_year_to_the_next() -> None:
+    h = run(world(90)).horizons[0]
+    assert [y.year for y in h.by_year] == sorted({y.year for y in h.by_year})
+    assert sum(y.n for y in h.by_year) == h.n_common
+    y = h.by_year[0]
+    assert 0.0 <= y.mean_price <= 1.0 and 0.0 <= y.yes_rate <= 1.0
+    assert y.brier_market is not None and y.brier_calibrated is not None

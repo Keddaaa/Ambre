@@ -65,21 +65,35 @@ Sources : `evaluation_engine/history.py`, `calibration.py`, `historical.py` (pur
 
 **Incertitude.** Différence appariée = Brier du modèle − Brier du marché (positive = le modèle est moins bon). Deux intervalles à 95 % : *naïf* (marchés indépendants : moyenne ± 1,96 `s/√n`, `s` écart-type d'échantillon avec `n−1`) et *par grappes* (CR1 : les résidus d'une grappe sont additionnés avant d'être élevés au carré). Une grappe regroupe les marchés dont les questions ont un recouvrement de mots de contenu d'au moins 0,6 (Jaccard, liaison simple) : des marchés presque identiques ne sont pas des preuves indépendantes. Un verdict « better » ou « worse » exige au moins 30 grappes **et** un intervalle par grappes qui exclut zéro ; sinon « inconclusive ».
 
-### Mesure du 2026-11-02 (1 169 marchés résolus, 78 818 paris, historiques tous complets)
+### Mesure du 2026-11-02 (5 663 marchés résolus chargés, 454 951 paris, historiques tous complets)
 
-| Horizon | Marchés comparés | Brier marché | Brier baseline AMBRE | Différence [IC grappes] | Brier recalibré | Différence [IC grappes] |
-|---|---|---|---|---|---|---|
-| 1 j | 924 (855 grappes) | 0,2040 | 0,2028 | −0,0012 [−0,0026 ; +0,0001] | 0,2016 | −0,0024 [−0,0085 ; +0,0038] |
-| 3 j | 833 (786) | 0,1896 | 0,1892 | −0,0005 [−0,0018 ; +0,0009] | 0,1873 | −0,0024 [−0,0078 ; +0,0030] |
-| 7 j | 708 (666) | 0,1811 | 0,1810 | −0,0002 [−0,0016 ; +0,0013] | 0,1790 | −0,0021 [−0,0066 ; +0,0023] |
-| 30 j | 416 (393) | 0,1518 | 0,1527 | +0,0009 [−0,0009 ; +0,0026] | 0,1487 | −0,0032 [−0,0095 ; +0,0031] |
+Le lot est échantillonné par ancres hebdomadaires de création depuis 2023 (25 marchés par ancre). Quatre horizons (1, 3, 7 et 30 jours après la création) ; 2 419 à 4 850 marchés comparés par horizon. Intervalles par grappes ; la dernière colonne est élargie pour les **8 comparaisons** du rapport (2 modèles × 4 horizons, correction de Bonferroni), et c'est elle qui décide du verdict.
 
-**Lecture honnête.** Tous les verdicts sont « inconclusive » : aucun écart n'est distinguable de zéro.
-- **La baseline n'est pas démontrée moins bonne que le prix.** Le backtest à 54 marchés (+0,0040, IC [+0,0024 ; +0,0056]) venait d'un petit échantillon récent (premiers prix de marchés vivants du 31 octobre au 2 novembre) ; sur 400 à 900 marchés étalés depuis 2023, l'écart est de l'ordre de ±0,001. Ce résultat ne se généralise pas, et il ne montre pas non plus que la baseline est meilleure.
-- **Le prix recalibré a un Brier et un log loss un peu plus bas aux quatre horizons** (−0,002 à −0,003), mais l'intervalle contient zéro partout. Les quatre horizons réutilisent largement les mêmes marchés : ce ne sont pas quatre preuves indépendantes. Ce n'est pas une amélioration établie.
-- Aucune source d'information n'est évaluée ici.
+| Horizon | Marchés | Brier prix | Baseline AMBRE : écart | Prix recalibré : écart | IC par grappes | IC corrigé (8) | Verdict |
+|---|---|---|---|---|---|---|---|
+| 1 j | 4 850 | 0,1981 | −0,0001 | −0,0013 | [−0,0027 ; +0,0001] | [−0,0033 ; +0,0006] | inconclusif |
+| 3 j | 4 337 | 0,1916 | −0,0003 | **−0,0030** | [−0,0049 ; −0,0012] | **[−0,0056 ; −0,0005]** | **better** |
+| 7 j | 3 623 | 0,1834 | −0,0001 | −0,0007 | [−0,0023 ; +0,0010] | [−0,0030 ; +0,0017] | inconclusif |
+| 30 j | 2 419 | 0,1650 | 0,0000 | −0,0019 | [−0,0043 ; +0,0005] | [−0,0053 ; +0,0015] | inconclusif |
 
-**Limites.** L'échantillon vient de listes triées par date de création (25 marchés par ancre mensuelle) : ce n'est pas un tirage aléatoire de tous les marchés. Les résolutions `CANCEL` et `MKT` sont exclues. Seuls les marchés `cpmm-1` en `MANA` passent le filtre existant. L'approximation normale est peu fiable sous ~30 grappes. Les frais, la profondeur du carnet et l'impact de prix ne sont pas modélisés : un écart de Brier n'est pas un rendement.
+La baseline AMBRE est « inconclusif » à chaque horizon (écart de l'ordre de 0,0001).
+
+**Un biais du prix, constant.** Le prix moyen dépasse le taux réel de `YES` de 5 à 8 points, chaque année et à chaque horizon (par exemple à 3 jours : 2023 0,47 contre 0,39 ; 2024 0,45 contre 0,40 ; 2025 0,44 contre 0,39 ; 2026 0,47 contre 0,42). La calibration par tranches va dans le même sens : à 3 jours, un prix de 0,65 se réalise 54 % du temps, 0,75 à 64 %, 0,35 à 26 %. L'ajustement logistique sur tout l'échantillon donne `a ≈ −0,3` et `b ≈ 0,94` : un décalage vers le bas bien plus qu'une confiance excessive.
+
+**Ce que le prix recalibré apporte, et ce qu'il n'apporte pas.**
+- À 3 jours, il abaisse le Brier de 0,0030 (environ 1,6 %), et l'intervalle corrigé exclut zéro. Cet effet a le même signe dans les quatre années (−0,0041, −0,0021, −0,0021, −0,0044).
+- Aux autres horizons, il n'est pas établi, et il n'est pas stable : à 7 et 30 jours, 2023 est **moins bon** que le prix (+0,0077 et +0,0047) alors que 2024 et 2025 sont meilleurs. Une propriété stable du marché ne changerait pas de signe ainsi.
+- Les quatre horizons réutilisent en grande partie les mêmes marchés : ce ne sont pas quatre confirmations indépendantes.
+
+**Limites de cette mesure.**
+- L'échantillon ne contient que des marchés **déjà résolus** `YES` ou `NO` (les `CANCEL` et `MKT` sont exclus) : un marché encore ouvert n'y figure pas. Cette sélection peut pousser les taux de `YES` vers le bas pour les ancres récentes. Elle ne peut pas expliquer l'écart de 2023, où presque tout est résolu, mais elle n'est pas écartée pour autant.
+- Une partie du biais peut venir du mélange de questions de Manifold (beaucoup de « X arrivera-t-il avant telle date ? », qui finissent à `NO`), pas d'une erreur de prix exploitable.
+- Un écart de Brier n'est pas un rendement : les frais, la profondeur de marché et l'impact du prix ne sont pas modélisés. **Rien ici ne démontre qu'un parieur gagnerait de l'argent.**
+- Les ancres hebdomadaires donnent 25 marchés par semaine de création, pas un tirage aléatoire de tous les marchés.
+- L'approximation normale est celle des grappes ; la correction de Bonferroni est prudente mais suppose un nombre de comparaisons connu à l'avance (ici 8).
+- Aucune source d'information n'est évaluée.
+
+**Hypothèse à tester en avant, pas à croire.** Si le biais de 5 points persiste, il se verra aussi sur des marchés encore ouverts. Le test honnête est un essai chronologique en simulation PAPER sur des marchés non encore résolus, avec des frais explicites, et non une lecture de cette table.
 
 ### Construction exacte de l'intervalle du backtest (`ambre backtest`, `ambre evaluate`)
 
