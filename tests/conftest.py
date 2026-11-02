@@ -27,5 +27,7 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
         raise httpx.ConnectError("network disabled in tests", request=request)
 
     monkeypatch.setattr(
-        cli, "default_http_factory", lambda: httpx.AsyncClient(transport=httpx.MockTransport(refuse))
+        cli,
+        "default_http_factory",
+        lambda: httpx.AsyncClient(transport=httpx.MockTransport(refuse)),
     )
