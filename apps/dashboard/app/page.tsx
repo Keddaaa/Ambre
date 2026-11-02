@@ -1,6 +1,8 @@
 "use client";
 
 import { CapitalChart } from "@/components/capital-chart";
+import { KpiCard } from "@/components/kpi";
+import { RunCycleButton } from "@/components/run-cycle-button";
 import { QueryState } from "@/components/state";
 import { Alert, Stat, signClass } from "@/components/stat";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +25,7 @@ import {
   formatSignedMana,
 } from "@/lib/format";
 import type { Portfolio, SystemStatus } from "@/lib/types";
+import { sparkSeries } from "@/lib/spark";
 import { useNow } from "@/lib/use-now";
 import Link from "next/link";
 
@@ -71,12 +74,15 @@ export default function OverviewPage() {
 
   return (
     <>
-      <div>
-        <h1 className="text-lg font-semibold">Vue d&apos;ensemble</h1>
-        <p className="text-sm text-muted-foreground">
-          Simulation papier en Mana virtuel. Mana ≠ argent réel ; aucun résultat n&apos;indique une
-          rentabilité.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-semibold">Vue d&apos;ensemble</h1>
+          <p className="text-sm text-muted-foreground">
+            Simulation papier en Mana virtuel. Mana ≠ argent réel ; aucun résultat n&apos;indique une
+            rentabilité.
+          </p>
+        </div>
+        <RunCycleButton />
       </div>
 
       {system.isError ? null : <Alerts portfolio={portfolio.data ?? null} system={system.data} />}
@@ -95,18 +101,30 @@ export default function OverviewPage() {
           const bound = p.total_value_is_lower_bound;
           return (
             <>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <Stat
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                <KpiCard
+                  id="total"
                   label="Capital total"
                   value={`${bound ? "≥ " : ""}${formatMana(p.total_value)}`}
                   hint={bound ? "Borne basse : exposition inconnue" : `Initial ${formatMana(p.simulation.initial_capital)}`}
+                  values={sparkSeries(history.data ?? [], (x) => x.at, (x) => x.total_value)}
                 />
-                <Stat label="Cash" value={formatMana(p.cash)} />
-                <Stat
+                <KpiCard
+                  id="cash"
+                  label="Cash"
+                  value={formatMana(p.cash)}
+                  values={sparkSeries(history.data ?? [], (x) => x.at, (x) => x.cash)}
+                />
+                <KpiCard
+                  id="latent"
                   label="Valeur latente"
                   value={formatMana(p.positions_value)}
                   hint="latente, non réalisée"
+                  values={sparkSeries(history.data ?? [], (x) => x.at, (x) => x.positions_value)}
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
                 <Stat
                   label="Performance nette"
                   value={bound ? "—" : formatSignedMana(performance)}

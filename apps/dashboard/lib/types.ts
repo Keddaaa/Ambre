@@ -119,6 +119,8 @@ export interface Decision {
   survival_state: string;
   risk_reasons: string[];
   execution_status: string;
+  /** Who took the decision: the algorithm (AMBRE), the owner (USER) or Claude (CLAUDE). */
+  actor: string;
   outcome: string | null;
   payout: number | null;
   settled_at: string | null;
@@ -207,4 +209,29 @@ export interface Evaluation {
   brier_difference_ci95: [number, number] | null;
   model_calibration: CalibrationBin[];
   market_calibration: CalibrationBin[];
+}
+
+export interface OrderRequest {
+  market_id: string;
+  side: "YES" | "NO";
+  /** The actor's own P(YES), strictly between 0 and 1. */
+  probability: number;
+  stake: number;
+  actor: "USER" | "CLAUDE";
+  request_id: string;
+  note: string | null;
+}
+
+export interface CycleReport {
+  survival_state: string;
+  evaluated: number;
+  ineligible: number;
+  no_trade: number;
+  simulated: number;
+  rejected: number;
+  skipped_duplicate: number;
+  skipped_by_survival: number;
+  skipped_no_capacity: number;
+  settled: { settled: number; refunded: number; unknown: string[] };
+  model_version: string;
 }

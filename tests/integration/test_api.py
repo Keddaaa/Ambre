@@ -302,7 +302,13 @@ def test_no_endpoint_changes_execution_mode() -> None:
         for m in getattr(r, "methods", set())
         if m in {"POST", "PUT", "PATCH", "DELETE"}
     }
-    assert writes == {("/control/halt", "POST"), ("/control/resume", "POST")}
+    # Paper-only writes; none of them can change the execution mode or reach Manifold.
+    assert writes == {
+        ("/control/halt", "POST"),
+        ("/control/resume", "POST"),
+        ("/control/run-cycle", "POST"),
+        ("/orders", "POST"),
+    }
     assert not any("mode" in p for p, _ in writes)
 
 

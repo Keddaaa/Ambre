@@ -70,3 +70,11 @@
 - **Raisons :** redémarrage automatique avec Docker, sans service système à écrire ; le mode papier ne peut pas être changé par une variable d'environnement oubliée.
 - **Compromis :** le service exige PostgreSQL (la base SQLite par défaut reste pour le développement local) ; `POSTGRES_PASSWORD` doit tenir dans une URL sans encodage (hexadécimal recommandé, voir `.env.example`). L'API et le dashboard ne sont pas conteneurisés.
 - **Conséquences :** `docker compose up -d` lance Postgres et la synchronisation. Toujours des GET Manifold uniquement ; aucun secret dans l'image (`.env` exclu par `.dockerignore`).
+
+## ADR-009 — Actions manuelles papier, tracées par acteur
+
+- **Contexte :** le dashboard ne pouvait qu'arrêter et reprendre. Le propriétaire veut agir depuis le dashboard, et pouvoir faire agir Claude par la même voie, sans que l'évaluation de l'algorithme soit faussée.
+- **Décision :** chaque décision porte un `actor` (`AMBRE` par défaut, `USER`, `CLAUDE`). `POST /orders` crée une mise papier manuelle (stratégie `MANUAL`) : l'acteur fournit sa propre P(YES) et une mise ; la probabilité est pénalisée par l'incertitude de la baseline, puis le **même risk engine** plafonne ou refuse. Un refus est journalisé. `request_id` rend l'envoi idempotent. `POST /control/run-cycle` lance un cycle sur les données stockées. L'acteur `AMBRE` ne peut pas être fourni par l'API.
+- **Raisons :** une action manuelle ne doit jamais contourner les garde-fous ; la traçabilité par acteur permet d'évaluer Ambre séparément de ses opérateurs. Une réponse de LLM n'est pas une probabilité (ADR-004) : la probabilité de Claude est une déclaration d'acteur, journalisée comme telle, jamais une entrée du modèle.
+- **Compromis :** l'API n'a pas d'authentification (voir `ROADMAP.md`) : le champ `actor` est déclaratif. La clôture manuelle d'une position n'existe pas : le CPMM de vente n'est pas encore implémenté et une clôture au prix affiché inventerait une exécution.
+- **Conséquences :** migration `0002` (colonne `decisions.actor`, `AMBRE` pour l'existant). `evaluate` compte aujourd'hui la première décision de chaque marché quel que soit l'acteur ; filtrer par acteur reste à faire avant d'interpréter un score.

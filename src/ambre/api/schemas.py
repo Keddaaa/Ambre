@@ -109,6 +109,7 @@ class DecisionOut(_Out):
     survival_state: str
     risk_reasons: list[str]
     execution_status: str
+    actor: str
     outcome: str | None
     payout: float | None
     settled_at: datetime | None
@@ -173,6 +174,41 @@ class HaltIn(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     reason: str = Field(min_length=3, max_length=500)
+
+
+class OrderIn(BaseModel):
+    """A manual PAPER order. ``probability`` is the actor's own P(YES); the risk engine
+    still caps or refuses the stake. ``actor`` can never be AMBRE."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    market_id: str = Field(min_length=1, max_length=64)
+    side: Literal["YES", "NO"]
+    probability: float = Field(gt=0, lt=1, allow_inf_nan=False)
+    stake: float = Field(gt=0, allow_inf_nan=False)
+    actor: Literal["USER", "CLAUDE"]
+    request_id: str = Field(min_length=8, max_length=64)
+    note: str | None = Field(default=None, max_length=300)
+
+
+class SettlementOut(BaseModel):
+    settled: int
+    refunded: int
+    unknown: list[str]
+
+
+class CycleOut(BaseModel):
+    survival_state: str
+    evaluated: int
+    ineligible: int
+    no_trade: int
+    simulated: int
+    rejected: int
+    skipped_duplicate: int
+    skipped_by_survival: int
+    skipped_no_capacity: int
+    settled: SettlementOut
+    model_version: str
 
 
 class ResumeIn(BaseModel):

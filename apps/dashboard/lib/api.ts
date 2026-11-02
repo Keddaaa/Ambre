@@ -4,11 +4,14 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 
 import type {
   Control,
+  CycleReport,
+  Decision,
   DecisionsPage,
   Evaluation,
   MarketDetail,
   MarketsPage,
   MarketStatus,
+  OrderRequest,
   Portfolio,
   PortfolioPoint,
   SystemStatus,
@@ -209,6 +212,37 @@ export function useEvaluation() {
         if (isNotFoundWith(e, "no active simulation")) return null;
         throw e;
       }
+    },
+  });
+}
+
+/** Manual PAPER order. A refusal by the risk engine is a normal answer (REJECTED), not an error. */
+export function usePlaceOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (order: OrderRequest) => postJson<Decision>("/orders", order),
+    onSettled: async (_data, _err, order) => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: keys.portfolio }),
+        qc.invalidateQueries({ queryKey: ["decisions"] }),
+        qc.invalidateQueries({ queryKey: keys.market(order.market_id) }),
+        qc.invalidateQueries({ queryKey: keys.system }),
+      ]);
+    },
+  });
+}
+
+/** One paper cycle on the data already stored; refreshes everything it can change. */
+export function useRunCycle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => postJson<CycleReport>("/control/run-cycle", {}),
+    onSettled: async () => {
+      await Promise.all(
+        [keys.system, keys.portfolio, ["decisions"], ["markets"], keys.evaluation].map((queryKey) =>
+          qc.invalidateQueries({ queryKey }),
+        ),
+      );
     },
   });
 }

@@ -129,6 +129,7 @@ class DecisionRow(Base):
     risk_reasons: Mapped[list[str]] = mapped_column(JSON)
     execution_status: Mapped[str] = mapped_column(String)
     idempotency_key: Mapped[str] = mapped_column(String, unique=True)
+    actor: Mapped[str] = mapped_column(String, default="AMBRE", server_default="AMBRE")
     outcome: Mapped[str | None] = mapped_column(String, nullable=True)
     payout: Mapped[float | None] = mapped_column(Float, nullable=True)
     settled_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

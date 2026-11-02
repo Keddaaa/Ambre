@@ -52,6 +52,14 @@ class StrategyName(StrEnum):
     NO_TRADE = "NO_TRADE"
 
 
+class Actor(StrEnum):
+    """Who took a decision. Manual actors are evaluated separately from the algorithm."""
+
+    AMBRE = "AMBRE"
+    USER = "USER"
+    CLAUDE = "CLAUDE"
+
+
 class SimulationStatus(StrEnum):
     ACTIVE = "ACTIVE"
     DEAD = "DEAD"

@@ -27,5 +27,7 @@ FastAPI, `src/ambre/api/app.py`. Schémas dans `api/schemas.py`, miroir TypeScri
 | GET | `/portfolio/history` | Historique de valeur |
 | POST | `/control/halt` | Arrêt d'urgence (`{"reason": …}`) |
 | POST | `/control/resume` | Reprise (`{"confirm": true}`) |
+| POST | `/control/run-cycle` | Lance un cycle papier sur les données déjà stockées (aucun appel Manifold) |
+| POST | `/orders` | Mise papier manuelle (`market_id`, `side`, `probability`, `stake`, `actor` USER ou CLAUDE, `request_id`, `note`). Le risk engine plafonne ou refuse ; un refus est journalisé (`REJECTED`) |
 
 Les écritures sont protégées contre le CSRF et limitées aux origines configurées.

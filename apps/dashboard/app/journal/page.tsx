@@ -72,6 +72,7 @@ export default function JournalPage() {
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Marché</TableHead>
+                  <TableHead>Acteur</TableHead>
                   <TableHead>Action</TableHead>
                   <TableHead className="text-right">Mise</TableHead>
                   <TableHead className="text-right">Marché</TableHead>
@@ -97,6 +98,7 @@ export default function JournalPage() {
                           {d.market_question ?? d.market_id}
                         </Link>
                       </TableCell>
+                      <TableCell>{d.actor}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{d.action}</Badge>
                       </TableCell>
