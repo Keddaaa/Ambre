@@ -9,6 +9,7 @@
 - `/system` expose `active_strategy`.
 - Page `Évaluation` du dashboard : Brier, log loss, écart modèle − marché avec intervalle, calibration, et avertissement tant que l'échantillon est insuffisant.
 - Service Docker `worker` : synchronisation Manifold (lecture seule) et cycle papier toutes les 5 min, redémarrage automatique. Voir ADR-008.
+- Actions papier : `POST /orders` (mise manuelle USER ou CLAUDE, même risk engine) et `POST /control/run-cycle`. Colonne `decisions.actor` (migration `0002`, vérifiée sur PostgreSQL 16). Voir ADR-009.
 
 ### Corrigé
 

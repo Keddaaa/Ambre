@@ -1,10 +1,12 @@
-"""Read API for the dashboard, plus the emergency halt / resume endpoints.
+"""Read API for the dashboard, plus the paper-only action endpoints.
 
-The only write endpoints are POST /control/halt and /control/resume. No route can
-change the execution mode.
+Write endpoints: POST /control/halt, /control/resume, /control/run-cycle and /orders
+(a manual PAPER order, tagged USER or CLAUDE and checked by the risk engine). None of
+them calls Manifold, and no route can change the execution mode.
 """
 
 from collections.abc import Callable, Iterator
+from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
@@ -18,11 +20,18 @@ from ambre import __version__
 from ambre.api import schemas as sc
 from ambre.config.settings import Settings, get_settings
 from ambre.data_engine.sync import SYNC_KEY
-from ambre.domain.models import Action, StrategyName
+from ambre.domain.models import Action, Actor, Side, StrategyName
+from ambre.execution_engine.executor import ExecutionModeNotAvailable
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.db import make_engine, make_session_factory
 from ambre.infrastructure.orm import DecisionRow, MarketRow
-from ambre.pipeline import evaluation_for_simulation
+from ambre.pipeline import (
+    ManualOrder,
+    ManualOrderError,
+    evaluation_for_simulation,
+    manual_order,
+    run_cycle,
+)
 from ambre.portfolio.service import PortfolioService
 
 NO_SIMULATION = "no active simulation; run `ambre cycle`"
@@ -262,6 +271,47 @@ def create_app(
         row = repo.set_control(session, halted=False, reason=None, updated_at=clock())
         session.commit()
         return sc.ControlOut.model_validate(row)
+
+    order_status = {
+        "unknown_market": 404,
+        "no_simulation": 409,
+        "simulation_dead": 409,
+        "ineligible": 422,
+    }
+
+    @app.post("/orders", response_model=sc.DecisionOut)
+    def place_order(body: sc.OrderIn, session: Db) -> sc.DecisionOut:
+        order = ManualOrder(
+            market_id=body.market_id,
+            side=Side(body.side),
+            probability=body.probability,
+            stake=body.stake,
+            actor=Actor(body.actor),
+            request_id=body.request_id,
+            note=body.note,
+        )
+        try:
+            decision_id = manual_order(session, cfg, clock(), order)
+        except ManualOrderError as exc:
+            raise HTTPException(order_status[exc.kind], exc.detail) from exc
+        except ExecutionModeNotAvailable as exc:
+            raise HTTPException(409, str(exc)) from exc
+        session.commit()
+        row = session.get(DecisionRow, decision_id)
+        assert row is not None
+        return decision_out(row, questions_for(session, {row.market_id}))
+
+    @app.post("/control/run-cycle", response_model=sc.CycleOut)
+    def run_cycle_now(session: Db) -> sc.CycleOut:
+        """One paper decision cycle on the data already stored (no Manifold call)."""
+        try:
+            report = run_cycle(session, cfg, clock())
+        except ExecutionModeNotAvailable as exc:
+            raise HTTPException(409, str(exc)) from exc
+        session.commit()
+        data = asdict(report)
+        data["survival_state"] = report.survival_state.value
+        return sc.CycleOut.model_validate(data)
 
     return app
 

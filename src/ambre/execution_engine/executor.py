@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ambre.config.settings import Settings
-from ambre.domain.models import Action, ExecutionMode, ExecutionStatus, RiskVerdict
+from ambre.domain.models import Action, Actor, ExecutionMode, ExecutionStatus, RiskVerdict
 from ambre.infrastructure.orm import DecisionRow, LedgerRow, PositionRow
 from ambre.portfolio.service import OPEN, PortfolioService
 from ambre.value_engine.value import FillValue
@@ -69,6 +69,7 @@ class DecisionDraft:
     survival_state: str
     risk_reasons: list[str]
     idempotency_key: str
+    actor: str = Actor.AMBRE.value
 
 
 class PaperExecutor:
