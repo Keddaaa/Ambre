@@ -185,3 +185,26 @@ export interface Control {
   reason: string | null;
   updated_at: string | null;
 }
+
+export interface CalibrationBin {
+  lower: number;
+  upper: number;
+  n: number;
+  mean_forecast: number;
+  observed_rate: number;
+}
+
+export interface Evaluation {
+  n: number;
+  sufficient_sample: boolean;
+  min_sample: number;
+  model_brier: number | null;
+  market_brier: number | null;
+  model_log_loss: number | null;
+  market_log_loss: number | null;
+  /** model minus market; negative means the model scored better. */
+  brier_difference: number | null;
+  brier_difference_ci95: [number, number] | null;
+  model_calibration: CalibrationBin[];
+  market_calibration: CalibrationBin[];
+}
