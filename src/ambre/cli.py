@@ -280,10 +280,10 @@ def scheduler_snapshot(factory: sessionmaker[Session]) -> dict[str, Any]:
         return scheduler_status(session)
 
 
-def coverage(factory: sessionmaker[Session]) -> dict[str, Any]:
+def coverage(factory: sessionmaker[Session], settings: Settings | None = None) -> dict[str, Any]:
     """Coverage of the information network over every unresolved market, with denominators."""
     with factory() as session:
-        return coverage_report(session)
+        return coverage_report(session, settings)
 
 
 def vault_export(factory: sessionmaker[Session], directory: Path) -> dict[str, Any]:
@@ -387,7 +387,7 @@ def main(
             _emit(research_once(settings, factory, clock, http_factory))
             return 0
         if args.command == "coverage":
-            _emit(coverage(factory))
+            _emit(coverage(factory, settings))
             return 0
         if args.command == "scheduler-status":
             _emit(scheduler_snapshot(factory))

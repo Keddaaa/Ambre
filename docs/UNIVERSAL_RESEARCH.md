@@ -67,3 +67,25 @@ Débit si GDELT répond : 6 appels toutes les 10 min, soit au plus 864 par jour 
 - Aucun modèle de prédiction validé : aucun marché n'est `READY_FOR_PREDICTION`.
 - Apprentissage de l'utilité des sources, règles et raccourcis de recherche appris, pages du dashboard.
 - Dépendance à un seul fournisseur généraliste, actuellement limité en débit : un second (RSS officiels, autre API) reste à vérifier.
+
+## Diagnostic du débit (2026-11-02, après les passes manuelles)
+
+`ambre coverage` contient désormais une section `diagnostics`, dérivée uniquement de lignes enregistrées (jamais d'une cause déduite d'un agrégat).
+
+**Réconciliation des 1 608 marchés non résolus** (états exclusifs, somme exacte) : 1 522 `RESEARCH_DEFERRED` + 1 `RESEARCH_FAILED` + 2 `INSUFFICIENT_EVIDENCE` + 14 `NO_AVAILABLE_SOURCE` + 69 `UNDERSTOOD` (68 clos en attente de résolution, 1 ambigu).
+
+**Chevauchements, comptés à part :** « recherchables » (1 525) recoupe les états ci-dessus ; « recherchés » valait 3 parce qu'il comptait un échec (GDELT 429) avec deux réponses (USGS). Le rapport distingue maintenant `answered` (2) et `attempted_failed` (1).
+
+**Pourquoi 1 522 marchés sont différés :** la cause est enregistrée par marché : `provider unavailable now (budget, pause or stop)`. GDELT répond HTTP 429, le fournisseur est mis en pause (recul exponentiel), et tous les groupes de presse attendent. Le plafond de 6 appels par passe n'est pas atteint. Les échecs ne sont pas mis en cache (seuls `OK` et `EMPTY` le sont) : aucun cache n'est faussement frais.
+
+**Le scheduler n'a jamais tourné** : `intel_jobs` et `intel_job_runs` sont vides ; seules des passes manuelles (`ambre research`) ont eu lieu, et aucun worker n'est actif. Les compteurs ne mesurent donc pas un système laissé en marche.
+
+**Plafond de la planification, à lui seul :** 6 appels toutes les 600 s = 36 appels/h, soit environ 25,6 h pour 922 sujets en attente, même si GDELT répondait toujours. C'est de l'arithmétique sur les réglages (`diagnostics.capacity`), pas une mesure.
+
+**Partage des recherches :** 1 525 marchés pour 925 sujets (1,65 marché par sujet ; 748 sujets n'ont qu'un marché). En ignorant le domaine : 854 sujets, soit un gain possible limité (environ 8 %).
+
+**Pourquoi aucune preuve :** les 137 observations USGS sont des séismes M4,5 à M6,4 de la dernière semaine ; aucun n'est en Nouvelle-Zélande ni en Californie. Les deux marchés séismes concernés portent sur une année entière : un flux de sept jours ne peut pas les résoudre. Zéro lien est donc le résultat correct, pas un défaut de rapprochement. Les caractéristiques journalisées (`quake.matching_event_count = 0`) disent l'absence d'événement, pas une probabilité.
+
+**GDELT :** l'intervalle de 5 s est une restriction documentée du fournisseur (message du serveur) ; notre budget interne est plus strict (10 s, 300/h). Un appel isolé a abouti (HTTP 200) puis des appels identiques ont repris un 429 : la limitation par IP est irrégulière et ne dépend pas de notre cadence.
+
+**Conclusion :** le blocage est d'abord opérationnel (aucun worker en marche) et externe (limite GDELT), pas un défaut d'ordonnancement. Aucune limite n'a été modifiée.
