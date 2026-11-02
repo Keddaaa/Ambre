@@ -62,3 +62,11 @@
 - **Raisons :** les décisions tardives se rapprochent du prix final et gonflent le score ; une résolution sans date ne permet pas d'exclure une fuite ; une observation par marché évite de compter plusieurs fois la même issue.
 - **Compromis :** échantillon petit au début ; l'intervalle est une approximation normale, peu fiable sous ~30 marchés (`sufficient_sample` reste faux en dessous).
 - **Conséquences :** aucune conclusion d'avantage tant que l'échantillon est insuffisant. Le backtesting complet reste à faire.
+
+## ADR-008 — Worker de synchronisation dans un conteneur Docker
+
+- **Contexte :** la synchronisation automatique existait (`ambre worker`) mais s'arrêtait avec la session WSL ou le terminal.
+- **Décision :** un service `worker` dans `docker-compose.yml`, construit depuis un `Dockerfile` (Python 3.12, `uv sync --frozen --no-dev`). Il applique les migrations (`ambre init-db`) puis lance `ambre worker --interval 300`, avec `restart: unless-stopped`. `EXECUTION_MODE=PAPER` et `ENABLE_MANIFOLD_ORDERS=false` sont fixés dans le fichier compose, pas lus dans `.env`.
+- **Raisons :** redémarrage automatique avec Docker, sans service système à écrire ; le mode papier ne peut pas être changé par une variable d'environnement oubliée.
+- **Compromis :** le service exige PostgreSQL (la base SQLite par défaut reste pour le développement local) ; `POSTGRES_PASSWORD` doit tenir dans une URL sans encodage (hexadécimal recommandé, voir `.env.example`). L'API et le dashboard ne sont pas conteneurisés.
+- **Conséquences :** `docker compose up -d` lance Postgres et la synchronisation. Toujours des GET Manifold uniquement ; aucun secret dans l'image (`.env` exclu par `.dockerignore`).

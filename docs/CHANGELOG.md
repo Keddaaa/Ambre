@@ -8,6 +8,7 @@
 - `ambre evaluate` et `GET /evaluation`.
 - `/system` expose `active_strategy`.
 - Page `Évaluation` du dashboard : Brier, log loss, écart modèle − marché avec intervalle, calibration, et avertissement tant que l'échantillon est insuffisant.
+- Service Docker `worker` : synchronisation Manifold (lecture seule) et cycle papier toutes les 5 min, redémarrage automatique. Voir ADR-008.
 
 ### Corrigé
 

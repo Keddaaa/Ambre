@@ -39,6 +39,8 @@ docker compose up -d
 DATABASE_URL=postgresql+psycopg://ambre:<mot de passe>@localhost:5432/ambre uv run ambre init-db
 ```
 
+`docker compose up -d` lance aussi le service `worker` : il applique les migrations puis synchronise Manifold (GET uniquement) et exécute un cycle papier toutes les 5 minutes, avec redémarrage automatique (ADR-008). `docker compose logs -f worker` pour suivre.
+
 La migration et un cycle réel ont été vérifiés sur PostgreSQL 16 ; les tests tournent sur SQLite (voir `docs/CHANGELOG.md`).
 
 ## Tests
