@@ -30,6 +30,7 @@ from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.db import make_engine, make_session_factory
 from ambre.integrations.manifold.client import ManifoldClient
 from ambre.intelligence.connectors import CONNECTORS, build_providers
+from ambre.intelligence.coverage import coverage_report
 from ambre.intelligence.planning import load_gazetteer
 from ambre.intelligence.registry import load_registry
 from ambre.intelligence.scheduler import JobSpec, tick
@@ -198,7 +199,13 @@ def _research_in_session(
         try:
             providers = build_providers(registry, http, clock) if http is not None else {}
             report = await research_pass(
-                session, settings, now, registry=registry, providers=providers, gazetteer=gazetteer
+                session,
+                settings,
+                now,
+                registry=registry,
+                providers=providers,
+                gazetteer=gazetteer,
+                sleep=asyncio.sleep,
             )
         finally:
             if http is not None:
@@ -241,6 +248,9 @@ def research_job(settings: Settings, clock: Clock, http_factory: HttpFactory | N
                 for r in full["requests"]
             ],
             "plans": full["plans"],
+            "states": full["states"],
+            "queued_groups": full["queued_groups"],
+            "waited_seconds": full["waited_seconds"],
             "markets_without_information": len(full["markets_without_information"]),
         }
 
@@ -267,6 +277,12 @@ def research_tick(
 def scheduler_snapshot(factory: sessionmaker[Session]) -> dict[str, Any]:
     with factory() as session:
         return scheduler_status(session)
+
+
+def coverage(factory: sessionmaker[Session]) -> dict[str, Any]:
+    """Coverage of the information network over every unresolved market, with denominators."""
+    with factory() as session:
+        return coverage_report(session)
 
 
 def vault_export(factory: sessionmaker[Session], directory: Path) -> dict[str, Any]:
@@ -307,6 +323,7 @@ def _parser() -> argparse.ArgumentParser:
     work.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
     work.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
     sub.add_parser("research", help="one information-seeking pass (read-only, never places a bet)")
+    sub.add_parser("coverage", help="information coverage of every unresolved market")
     sub.add_parser("scheduler-status", help="scheduled jobs and their recent runs")
     export = sub.add_parser("vault-export", help="export the Cognitive Vault as Markdown files")
     export.add_argument("--dir", required=True, type=Path)
@@ -358,6 +375,9 @@ def main(
             )
         if args.command == "research":
             _emit(research_once(settings, factory, clock, http_factory))
+            return 0
+        if args.command == "coverage":
+            _emit(coverage(factory))
             return 0
         if args.command == "scheduler-status":
             _emit(scheduler_snapshot(factory))

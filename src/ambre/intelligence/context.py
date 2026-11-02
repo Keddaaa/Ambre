@@ -19,6 +19,7 @@ from ambre.intelligence.matching import MAX_PLACE_DISTANCE_DEG, match_observatio
 from ambre.intelligence.models import (
     EarthquakePayload,
     InfoNeed,
+    NewsArticlePayload,
     Observation,
     ObservationKind,
     ProviderStatus,
@@ -55,7 +56,9 @@ class FeatureSet:
     rejected: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
 
-def eligibility_reasons(obs: Observation, registry: Registry, now: datetime) -> list[str]:
+def eligibility_reasons(
+    obs: Observation, registry: Registry, now: datetime, *, require_verified: bool = True
+) -> list[str]:
     reasons: list[str] = []
     card = registry.get(obs.provider_id)
     if card is None:
@@ -70,7 +73,7 @@ def eligibility_reasons(obs: Observation, registry: Registry, now: datetime) -> 
         reasons.append("availability unknown: it cannot be placed before the decision")
     elif obs.available_at > now:
         reasons.append("available after the decision time")
-    if obs.kind is ObservationKind.OBSERVATION and not is_actionable(obs):
+    if require_verified and obs.kind is ObservationKind.OBSERVATION and not is_actionable(obs):
         reasons.append("not verified by the source")
     return reasons
 
@@ -189,6 +192,59 @@ def _earthquake_features(
     return FeatureSet(plan.market_id, tuple(out), tuple(rejected))
 
 
+def _news_features(
+    plan: MarketPlan, observations: Sequence[Observation], registry: Registry, now: datetime
+) -> FeatureSet:
+    """Counts of the linked articles that were already available: how many, from how many
+    independent sources, and how fresh the newest one is. Counts only, never a probability."""
+    usable: list[Observation] = []
+    rejected: list[tuple[str, str]] = []
+    for obs in observations:
+        if not isinstance(obs.payload, NewsArticlePayload):
+            continue
+        # a report is context, not a verified fact: it only has to be from a verified provider
+        # and already available; the features are counts, never a claim that the event happened
+        reasons = eligibility_reasons(obs, registry, now, require_verified=False)
+        if reasons:
+            rejected.append((obs.observation_id, "; ".join(reasons)))
+        else:
+            usable.append(obs)
+    if not usable:
+        return FeatureSet(plan.market_id, (), tuple(rejected))
+    newest = max(usable, key=lambda o: o.available_at or o.ingested_at)
+    assert newest.available_at is not None
+    domains = {
+        o.payload.domain
+        for o in usable
+        if isinstance(o.payload, NewsArticlePayload) and o.payload.domain
+    }
+    kwargs = {"kind": "observation", "provider_id": newest.provider_id}
+    out = [
+        ContextFeature(
+            "news.article_count",
+            float(len(usable)),
+            "articles",
+            available_at=newest.available_at,
+            **kwargs,
+        ),
+        ContextFeature(
+            "news.independent_sources",
+            float(len(domains)),
+            "domains",
+            available_at=newest.available_at,
+            **kwargs,
+        ),
+        ContextFeature(
+            "news.newest_age_seconds",
+            (now - newest.available_at).total_seconds(),
+            "s",
+            available_at=newest.available_at,
+            **kwargs,
+        ),
+    ]
+    return FeatureSet(plan.market_id, tuple(out), tuple(rejected))
+
+
 def build_feature_set(
     plan: MarketPlan,
     observations: Sequence[Observation],
@@ -204,6 +260,8 @@ def build_feature_set(
         return _earthquake_features(
             plan, observations, registry, now, market_created_at, collected_at
         )
+    if plan.need is InfoNeed.GENERAL_NEWS and plan.topic is not None:
+        return _news_features(plan, observations, registry, now)
     return FeatureSet(plan.market_id)
 
 

@@ -45,11 +45,16 @@ providers:
     name: GDELT DOC 2.0
     domain: news
     status: VERIFIED_LIMITED
-    enabled: false
+    enabled: true
+    authentication: none
     verified_on: "2026-11-02"
+    # Free use including commercial; citing GDELT is required where results are shown.
+    allow_commercial_use: true
     provider_limits: {min_interval_seconds: 5}
-    internal_budget: {min_interval_seconds: 10, per_day: 2000}
-    freshness_seconds: 900
+    internal_budget: {min_interval_seconds: 10, per_hour: 300, per_day: 2000}
+    reserve_fraction: 0.2
+    freshness_seconds: 21600  # a week-long news search does not change in a few minutes
+    capabilities: {general_news: 0.5}
 
   hacker_news:
     name: Hacker News API

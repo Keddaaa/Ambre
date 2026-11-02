@@ -27,6 +27,10 @@ intelligence:
   schedule_research: true
   research_interval_seconds: 600
   job_lease_seconds: 900
+  max_calls_per_pass: 6
+  max_wait_in_pass_seconds: 12
+  news_timespan: 1week
+  news_max_records: 75
   min_value_score: 0.02
   failure_backoff_base_seconds: 60
   failure_backoff_cap_seconds: 3600

@@ -108,7 +108,7 @@ Métriques : Brier, log loss, calibration (`evaluation_engine` existe déjà), r
 | Knowledge Memory | **partiel** : requêtes, observations, liens, usage. Pas d'affirmations, de prévisions ni de résultats | `orm.py` |
 | Source Learning | **non fait** : `usefulness` reste `None` | — |
 
-Connecteurs : USGS et Open-Meteo (`providers/`). Les autres fournisseurs de la liste blanche sont dans le registre, désactivés. Compréhension des marchés, contrats par domaine et pont vers les caractéristiques : `RESOLUTION_INTELLIGENCE.md` (ADR-013).
+Connecteurs : USGS, Open-Meteo et GDELT (`providers/`). Les autres fournisseurs de la liste blanche sont dans le registre, désactivés. Compréhension des marchés, contrats par domaine et pont vers les caractéristiques : `RESOLUTION_INTELLIGENCE.md` (ADR-013).
 
 Mesure réelle du 2026-11-02 (PostgreSQL, un appel USGS) : 2 marchés sur les séismes détectés parmi 1 143 marchés ouverts, 1 requête (200), 138 séismes M ≥ 4,5 des 7 derniers jours stockés (magnitude max 6,4), 0 lien (aucun séisme ≥ 6,7 ni dans les zones Nouvelle-Zélande ou San Francisco : vérifié par une requête SQL indépendante). Aucune décision ni position créée.
 

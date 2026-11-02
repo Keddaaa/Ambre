@@ -37,6 +37,8 @@ Statuts : `VERIFIED_FREE`, `VERIFIED_LIMITED`, `REQUIRES_REGISTRATION`, `REQUIRE
 
 Observé : 3 requêtes, 1 réponse `429`, 2 réponses `200` avec le corps `{}` (requêtes à 1 jour), 1 réponse `200` avec des articles (`ArtList`, 1 semaine). Champs d'un article : `url`, `url_mobile`, `title`, `seendate` (`YYYYMMDDTHHMMSSZ`), `socialimage`, `domain`, `language`, `sourcecountry`. **`seendate` est l'heure à laquelle GDELT a vu l'article, pas la date de publication** : `published_at` reste `None`, `available_at` = `seendate`.
 
+**Connecteur actif (2026-11-02)** : `providers/gdelt.py` (recherche d'articles, niveau généraliste). Le jour de l'activation, GDELT a répondu HTTP 429 à 3 requêtes espacées de 12 s puis à une requête brute, sans délai indiqué : l'IP était limitée. Le code ne réessaie pas avant la fin de la pause (60 s doublées jusqu'à 1 h).
+
 Limites : un corps `{}` ne signifie ni « aucun article » ni erreur : il doit être traité comme un résultat vide non concluant. Un 429 pose un temps d'attente avant toute reprise.
 
 ### `open_meteo` — Open-Meteo (météo)

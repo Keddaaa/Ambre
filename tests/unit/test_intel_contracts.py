@@ -147,22 +147,28 @@ def test_an_earthquake_market_without_a_threshold_is_collected_but_not_estimable
 @pytest.mark.parametrize(
     ("question", "domain"),
     [
-        ("Will Bitcoin trade above $150,000 by December 31, 2026?", MarketDomain.FINANCE),
+        ("Will Bitcoin trade above $150,000 by December 31, 2026?", MarketDomain.CRYPTO),
         ("Will the CPI inflation rate exceed 4% in 2027?", MarketDomain.ECONOMY),
         ("Will OpenAI release a new model before 2027?", MarketDomain.TECHNOLOGY),
         ("Will the Lakers win the NBA championship in 2027?", MarketDomain.SPORT),
         ("Will a ceasefire be signed in Ukraine by 2027?", MarketDomain.GEOPOLITICS),
-        ("Will a vaccine for X be approved by 2030?", MarketDomain.SCIENCE),
+        ("Will a vaccine for X be approved by 2030?", MarketDomain.HEALTH),
         ("Will my cat like the new food?", MarketDomain.GENERAL),
     ],
 )
-def test_domains_without_a_connector_are_understood_but_say_so(
+def test_domains_without_a_specialised_connector_get_a_generalist_search_or_say_why_not(
     question: str, domain: MarketDomain
 ) -> None:
     p = plan(question)
     assert p.domain is domain
-    assert p.status is PlanStatus.NO_CONNECTOR and p.need is None and not p.estimable
-    assert p.reasons and any("no connector" in r for r in p.reasons)
+    assert not p.estimable  # no specialised data: never estimable
+    if domain is MarketDomain.GENERAL:  # nothing searchable in the question
+        assert p.status is PlanStatus.NO_CONNECTOR and p.need is None
+        assert any("no connector" in r for r in p.reasons)
+    else:  # no connector is not a dead end: the generalist search takes over
+        assert p.status is PlanStatus.COLLECTABLE and p.need is InfoNeed.GENERAL_NEWS
+        assert p.level == 2 and p.topic is not None
+        assert any("generalist news search" in r for r in p.reasons)
 
 
 def test_every_domain_has_a_contract_that_names_what_it_still_needs() -> None:
@@ -193,6 +199,8 @@ def test_a_closed_market_is_not_applicable() -> None:
 
 def test_a_phenomenon_without_a_connector_is_not_dressed_up_as_a_temperature_question() -> None:
     p = plan("Will a hurricane make landfall in a US state (Pacific) in 2026?")
-    assert p.domain is MarketDomain.WEATHER and p.status is PlanStatus.NO_CONNECTOR
-    assert p.need is None and any("not supported" in b for b in p.blocking)
+    assert p.domain is MarketDomain.WEATHER
+    # no specialised connector, so the generalist search is used: evidence only, not estimable
+    assert p.status is PlanStatus.COLLECTABLE and p.need is InfoNeed.GENERAL_NEWS and p.level == 2
+    assert any("not supported" in b for b in p.blocking) and not p.estimable
     assert not any("temperature variable" in b for b in p.blocking)

@@ -69,6 +69,13 @@ class IntelligenceConfig(BaseModel):
     schedule_research: bool = True
     research_interval_seconds: int = Field(default=600, ge=60)
     job_lease_seconds: int = Field(default=900, ge=60)
+    # Queue: at most this many provider calls per pass, best-ranked groups first; the rest
+    # wait for the next pass (state RESEARCH_DEFERRED), nothing is dropped.
+    max_calls_per_pass: int = Field(default=6, ge=1)
+    # A pass may sleep this long for a provider's minimum interval, never longer.
+    max_wait_in_pass_seconds: float = Field(default=12.0, ge=0)
+    news_timespan: str = "1week"
+    news_max_records: int = Field(default=75, ge=1, le=250)
     failure_backoff_cap_seconds: float = Field(default=3600.0, gt=0)
 
 
