@@ -17,7 +17,7 @@ quantitative engines and the Risk Engine decide.
 import logging
 import uuid
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -30,6 +30,7 @@ from ambre.cognitive.models import EvidenceLevel, NoteDraft, NoteType, Provenanc
 from ambre.config.settings import Settings
 from ambre.domain.models import Actor
 from ambre.infrastructure import repositories as repo
+from ambre.infrastructure.orm import MarketRow, SnapshotRow
 from ambre.intelligence import store
 from ambre.intelligence.budget import BudgetDecision, Priority, backoff_seconds, decide
 from ambre.intelligence.context import FeatureSet, build_feature_set
@@ -105,6 +106,8 @@ class ResearchReport:
     provider_unavailable: dict[str, str] = field(default_factory=dict)
     #: markets recognised but not collectable (ambiguous or beyond the forecast horizon)
     not_collectable: list[dict[str, Any]] = field(default_factory=list)
+    #: rows added to the feature journal this pass (knowledge that changed)
+    journaled: int = 0
 
 
 @dataclass(frozen=True)
@@ -317,7 +320,29 @@ async def research_pass(
             outcomes[market_id] = result.outcome
 
     _write_states(session, plans, outcomes, registry, clock.now, report)
+    report.journaled = _journal_features(session, pairs, plans, registry, clock.now)
     return report
+
+
+def _journal_features(
+    session: Session,
+    pairs: Sequence[tuple[MarketRow, SnapshotRow]],
+    plans: dict[str, MarketPlan],
+    registry: Registry,
+    now: datetime,
+) -> int:
+    """Record the dated features of every market that has some. Reads only; bets nothing."""
+    written = 0
+    for market_row, snap_row in pairs:
+        plan = plans[market_row.id]
+        if plan.status is not PlanStatus.COLLECTABLE:
+            continue
+        features = market_context(
+            session, plan, registry, now, market_created_at=market_row.created_at
+        )
+        if store.append_feature_journal(session, plan, features, now, snap_row.probability):
+            written += 1
+    return written
 
 
 def _searchable(registry: Registry, need: InfoNeed | None) -> bool:

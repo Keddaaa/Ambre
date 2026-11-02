@@ -5,9 +5,13 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ambre.intelligence.context import FeatureSet
+from ambre.intelligence.feature_journal import fingerprint, journal_payload
+from ambre.intelligence.generic_planning import MarketPlan
 from ambre.intelligence.matching import MarketLink
 from ambre.intelligence.models import Observation
 from ambre.intelligence.orm import (
+    IntelFeatureJournalRow,
     IntelMarketLinkRow,
     IntelObservationRow,
     IntelProviderStateRow,
@@ -183,3 +187,43 @@ def market_observations(session: Session, market_id: str) -> list[Observation]:
         .order_by(IntelObservationRow.ingested_at, IntelObservationRow.observation_id)
     )
     return [observation_from_row(r) for r in rows]
+
+
+def append_feature_journal(
+    session: Session,
+    plan: MarketPlan,
+    features: FeatureSet,
+    now: datetime,
+    market_probability: float | None,
+) -> bool:
+    """Journal what is known about a market now, unless that is empty or already on file.
+
+    Returns True when a row was written. The newest row of the market is compared by
+    fingerprint, so a pass that learned nothing new adds nothing.
+    """
+    payload = journal_payload(features)
+    if not payload:
+        return False
+    digest = fingerprint(payload)
+    latest = session.scalar(
+        select(IntelFeatureJournalRow.fingerprint)
+        .where(IntelFeatureJournalRow.market_id == plan.market_id)
+        .order_by(IntelFeatureJournalRow.as_of.desc(), IntelFeatureJournalRow.id.desc())
+        .limit(1)
+    )
+    if latest == digest:
+        return False
+    session.add(
+        IntelFeatureJournalRow(
+            market_id=plan.market_id,
+            as_of=now,
+            domain=plan.domain.value,
+            need=plan.need.value if plan.need is not None else None,
+            level=plan.level,
+            estimable=plan.estimable,
+            market_probability=market_probability,
+            fingerprint=digest,
+            features=payload,
+        )
+    )
+    return True

@@ -136,3 +136,13 @@
 - **Raisons :** une validation aléatoire laisserait le futur informer le passé ; le réajustement par observation reproduit ce que le système aurait su.
 - **Compromis :** O(n²) sur le nombre de marchés ; premier prix seulement ; la baseline testée n'est pas un modèle appris. Aucun protocole de graine ni de découpage encore.
 - **Conséquences :** nouvelle commande `ambre backtest` (lecture seule). `evaluation_engine.backtest` reste pur ; la requête vit dans `infrastructure`. Aucune interdiction d'`AGENTS.md` n'est levée et aucun avantage sur le marché n'est affirmé.
+
+
+## ADR-017 — Journal de caractéristiques : constituer le jeu d'entraînement avant tout modèle
+
+- **Problème :** les estimations ne peuvent s'appuyer sur les sources que par un modèle validé hors échantillon (ADR-013), et la baseline actuelle fait moins bien que le prix (Brier +0,004, IC95 [+0,002 ; +0,006], 54 marchés, ADR-016). Or rien n'enregistre ce que le réseau savait d'un marché au moment où il le regardait : sans cet historique daté, aucun modèle ne pourra jamais être entraîné ni comparé avec et sans source.
+- **Options :** reconstruire les caractéristiques après coup depuis les observations ; ne rien stocker et attendre un modèle ; journaliser à chaque passe ce qui était connu.
+- **Choix :** table append-only `intel_feature_journal` (migration `0007`). À la fin de chaque passe de recherche, pour chaque marché collectable qui a des caractéristiques, on écrit : instant, domaine, besoin, niveau, estimabilité, **prix du marché à cet instant**, caractéristiques datées. Une ligne n'est écrite que si la connaissance a changé (empreinte) ; les caractéristiques qui ne grandissent qu'avec l'horloge (`*age_seconds`) sont stockées mais exclues de l'empreinte.
+- **Raisons :** reconstruire après coup risque une fuite (une observation arrivée après la décision) ; le prix à l'instant est nécessaire pour comparer au marché ; l'empreinte évite une ligne toutes les dix minutes.
+- **Compromis :** les marchés sans caractéristiques ne sont pas journalisés (le groupe témoin vient du backtest) ; seuls trois domaines produisent des caractéristiques aujourd'hui (météo, séismes, presse) ; l'empreinte est exacte, pas tolérante aux variations négligeables.
+- **Conséquences :** `intelligence.feature_journal` est pur ; `store.append_feature_journal` écrit. Aucune lecture sur le chemin de pari, aucun lien avec décisions, positions ni ledger (testé). Ce journal ne produit aucune probabilité. Étape suivante : un moteur d'expériences qui joint le journal aux issues résolues et compare le Brier avec et sans caractéristiques, sur des marchés non vus.

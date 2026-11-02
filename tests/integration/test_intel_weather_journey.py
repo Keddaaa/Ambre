@@ -341,3 +341,36 @@ def test_the_whole_journey_never_touches_decisions_positions_or_the_ledger(
     assert counts() == before
     with factory() as s:
         assert repo.get_current_simulation(s) is None  # no simulation was even created
+
+
+def test_feature_journal_records_dated_features_with_the_price_and_never_twice(
+    h: Harness, factory: sessionmaker[Session]
+) -> None:
+    h.run()
+    with factory() as s:
+        rows = s.scalars(select(intel_orm.IntelFeatureJournalRow)).all()
+        by_market = {r.market_id: r for r in rows}
+        # markets with features are journaled; the out-of-horizon one has none and is absent
+        assert {"synthetic_w_nyc10", "synthetic_w_nyc12", "synthetic_w_london"} <= set(by_market)
+        assert "synthetic_w_far" not in by_market
+        nyc = by_market["synthetic_w_nyc10"]
+        assert nyc.as_of == NOW and nyc.market_probability == pytest.approx(0.3)
+        assert nyc.domain == "WEATHER" and nyc.estimable is True
+        names = {f["name"]: f for f in nyc.features}
+        assert names["weather.forecast.temperature_max"]["value"] == 30.0
+        assert all(f["available_at"] <= NOW.isoformat() for f in nyc.features)
+        assert by_market["synthetic_w_nosrc"].estimable is False  # collected, not estimable
+        first = len(rows)
+    h.run()  # same knowledge again: nothing new to record
+    with factory() as s:
+        assert len(s.scalars(select(intel_orm.IntelFeatureJournalRow)).all()) == first
+
+
+def test_feature_journal_does_not_touch_decisions_or_the_ledger(
+    h: Harness, factory: sessionmaker[Session]
+) -> None:
+    h.run()
+    with factory() as s:
+        assert s.scalar(select(func.count()).select_from(DecisionRow)) == 0
+        assert s.scalar(select(func.count()).select_from(LedgerRow)) == 0
+        assert s.scalar(select(func.count()).select_from(PositionRow)) == 0
