@@ -1,7 +1,8 @@
 # FORWARD TEST of the recalibrated price (ADR-019). PAPER mode only.
 # Pre-registered: the parameters, the age window and the costs below are fixed before the first
 # bet and must not be edited while the test runs. Use with its own database, for example:
-#   AMBRE_CONFIG=configs/forward_test.yaml DATABASE_URL=sqlite:///./var/forward_test.db ambre worker
+#   MAX_MARKETS_PER_CYCLE=5000 AMBRE_CONFIG=configs/forward_test.yaml \n#   DATABASE_URL=sqlite:///./var/forward_test.db ambre worker
+# MAX_MARKETS_PER_CYCLE is required: the default of 200 never reaches the markets of the window.
 # Same limits as configs/default.yaml except the explicit fee; research and news stay off.
 # Experimental, non-optimized initial parameters.
 risk:
