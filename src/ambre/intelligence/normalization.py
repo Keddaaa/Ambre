@@ -11,6 +11,7 @@ from ambre.intelligence.models import (
     Domain,
     EarthquakePayload,
     FetchResult,
+    NewsArticlePayload,
     Observation,
     ObservationKind,
     ResultKind,
@@ -21,6 +22,8 @@ from ambre.intelligence.models import (
 
 USGS_ID = "usgs_earthquakes"
 OPEN_METEO_ID = "open_meteo"
+GDELT_ID = "gdelt"
+MAX_TITLE = 300
 #: Our variable -> the Open-Meteo daily series (all three seen live on 2026-11-02).
 OPEN_METEO_SERIES = {
     "temperature_max": "temperature_2m_max",
@@ -204,6 +207,74 @@ def parse_open_meteo_daily(body: object, variable: str, ingested_at: datetime) -
                 published_at=None,
                 available_at=ingested_at,
                 revision=ingested_at.isoformat(),
+            )
+        )
+    if not observations:
+        return FetchResult(
+            kind=ResultKind.INCONCLUSIVE, detail="every item was invalid", invalid_items=invalid
+        )
+    return FetchResult(kind=ResultKind.OK, observations=tuple(observations), invalid_items=invalid)
+
+
+def _parse_seendate(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.strptime(value, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+def _clean(value: Any) -> str | None:
+    return value.strip() or None if isinstance(value, str) else None
+
+
+def parse_gdelt_articles(body: object, ingested_at: datetime) -> FetchResult:
+    """Parse a GDELT DOC 2.0 ``ArtList`` JSON answer.
+
+    ``{}`` is INCONCLUSIVE: the API returns it for no data, for a query it did not like and for
+    a throttled call alike. An article is identified by its URL, so the same article found by two
+    queries is one observation. ``available_at`` is when GDELT first saw it; GDELT gives neither
+    a publication time nor an event time, so those stay ``None``.
+    """
+    if not isinstance(body, dict) or not isinstance(body.get("articles"), list):
+        return FetchResult(kind=ResultKind.INCONCLUSIVE, detail="unexpected or empty response body")
+    articles = body["articles"]
+    if not articles:
+        return FetchResult(kind=ResultKind.EMPTY)
+    observations: list[Observation] = []
+    invalid = 0
+    for raw in articles:
+        url = raw.get("url") if isinstance(raw, dict) else None
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            invalid += 1
+            continue
+        seen = _parse_seendate(raw.get("seendate"))
+        title = _clean(raw.get("title"))
+        try:
+            payload = NewsArticlePayload(
+                url=url,
+                title=title[:MAX_TITLE] if title else None,
+                domain=_clean(raw.get("domain")),
+                language=_clean(raw.get("language")),
+                source_country=_clean(raw.get("sourcecountry")),
+                seen_at=seen,
+            )
+        except ValidationError:
+            invalid += 1
+            continue
+        observations.append(
+            Observation(
+                observation_id=make_observation_id(GDELT_ID, url, None),
+                provider_id=GDELT_ID,
+                domain=Domain.NEWS,
+                kind=ObservationKind.OBSERVATION,
+                payload=payload,
+                ingested_at=ingested_at,
+                verification_status=VerificationStatus.UNVERIFIED,
+                title=payload.title,
+                source_url=url,
+                available_at=seen,
             )
         )
     if not observations:

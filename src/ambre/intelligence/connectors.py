@@ -8,6 +8,7 @@ import httpx
 
 from ambre.intelligence.models import ProviderCard
 from ambre.intelligence.providers.base import Provider
+from ambre.intelligence.providers.gdelt import GdeltProvider
 from ambre.intelligence.providers.open_meteo import OpenMeteoProvider
 from ambre.intelligence.providers.usgs import UsgsProvider
 from ambre.intelligence.registry import Registry
@@ -17,6 +18,7 @@ ConnectorFactory = Callable[[ProviderCard, httpx.AsyncClient, Callable[[], datet
 CONNECTORS: dict[str, ConnectorFactory] = {
     "usgs_earthquakes": lambda card, http, clock: UsgsProvider(card, http, clock=clock),
     "open_meteo": lambda card, http, clock: OpenMeteoProvider(card, http, clock=clock),
+    "gdelt": lambda card, http, clock: GdeltProvider(card, http, clock=clock),
 }
 
 

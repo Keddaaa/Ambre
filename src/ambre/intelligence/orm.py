@@ -135,3 +135,27 @@ class IntelJobRunRow(Base):
     started_at: Mapped[datetime] = mapped_column(UTCDateTime)
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     detail: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class IntelMarketStateRow(Base):
+    """Where each scanned market stands, recomputed after every research pass.
+
+    One row per market: the information state (see ``states.py``), why, and the facts it was
+    derived from. Nothing is dropped from the counts: a market without a row is NOT_ANALYZED.
+    """
+
+    __tablename__ = "intel_market_state"
+
+    market_id: Mapped[str] = mapped_column(String, ForeignKey("markets.id"), primary_key=True)
+    state: Mapped[str] = mapped_column(String, index=True)
+    domain: Mapped[str] = mapped_column(String, index=True)
+    plan_status: Mapped[str] = mapped_column(String)
+    level: Mapped[int] = mapped_column(Integer)
+    estimable: Mapped[bool] = mapped_column(Boolean)
+    topic_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    reason: Mapped[str] = mapped_column(String)
+    last_outcome: Mapped[str | None] = mapped_column(String, nullable=True)
+    evidence_count: Mapped[int] = mapped_column(Integer)
+    last_researched_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON)

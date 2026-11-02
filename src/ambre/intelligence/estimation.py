@@ -78,3 +78,12 @@ def estimate_from_context(
             [f"model {model.version} returned an invalid probability: {probability!r}"],
         )
     return result(EstimationStatus.ESTIMATED, [], probability, model.version)
+
+
+#: Validated models available to the pipeline. Empty on purpose: none has been trained and
+#: validated on resolved markets yet (the experiment engine is a later phase).
+REGISTERED_MODELS: list[ProbabilityModel] = []
+
+
+def model_available(plan: MarketPlan) -> bool:
+    return any(m.validated and m.applies_to(plan) for m in REGISTERED_MODELS)

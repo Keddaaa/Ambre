@@ -20,6 +20,8 @@ PURE = [
     "generic_planning",
     "context",
     "estimation",
+    "queries",
+    "states",
 ]
 FORBIDDEN = ("ambre.infrastructure", "ambre.integrations", "ambre.pipeline", "httpx", "sqlalchemy")
 

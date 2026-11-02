@@ -251,3 +251,16 @@ def test_scheduler_status_shows_the_job_and_its_runs(
     snap = json.loads(capsys.readouterr().out.splitlines()[1])
     assert snap["jobs"][0]["name"] == "research" and snap["jobs"][0]["last_status"] == "OK"
     assert snap["runs"][0]["status"] == "OK"
+
+
+def test_the_coverage_command_reconciles_after_a_worker_pass(
+    db_url: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run_worker(Harness())
+    capsys.readouterr()
+    assert cli.main(["coverage"]) == 0
+    report = json.loads(capsys.readouterr().out.splitlines()[1])
+    assert report["reconciled"] is True and report["total_unresolved_markets"] == 1
+    assert sum(report["by_state"].values()) == report["total_unresolved_markets"]
+    assert report["cost"]["money"] == 0 and report["cost"]["total_requests"] == 1
+    assert all(r["denominator"] is not None for r in report["ratios"])

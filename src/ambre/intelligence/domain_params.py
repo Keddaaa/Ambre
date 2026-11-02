@@ -22,7 +22,13 @@ from ambre.intelligence.resolution import (
 )
 
 SOURCE_REQUIRED = frozenset(
-    {MarketDomain.WEATHER, MarketDomain.EARTHQUAKE, MarketDomain.FINANCE, MarketDomain.ECONOMY}
+    {
+        MarketDomain.WEATHER,
+        MarketDomain.EARTHQUAKE,
+        MarketDomain.FINANCE,
+        MarketDomain.CRYPTO,
+        MarketDomain.ECONOMY,
+    }
 )
 _HIGH = re.compile(r"\b(?:high|highest|maximum|max|hottest|daily high)\b", re.I)
 _LOW = re.compile(r"\b(?:low|lowest|minimum|min|coldest|daily low)\b", re.I)
@@ -205,7 +211,7 @@ def contract_for(analysis: ResolutionAnalysis) -> ContractResult:
         result = _needs(
             analysis, domain, date_word="event date", actor=None, threshold="indicator threshold"
         )
-    elif domain is MarketDomain.FINANCE:
+    elif domain in (MarketDomain.FINANCE, MarketDomain.CRYPTO):
         result = _needs(
             analysis,
             domain,
@@ -219,7 +225,7 @@ def contract_for(analysis: ResolutionAnalysis) -> ContractResult:
         )
     elif domain is MarketDomain.GEOPOLITICS:
         result = _needs(analysis, domain, date_word="deadline", actor="actor", threshold=None)
-    elif domain is MarketDomain.SCIENCE:
+    elif domain in (MarketDomain.SCIENCE, MarketDomain.HEALTH):
         result = _needs(analysis, domain, date_word="deadline", actor="topic", threshold=None)
     else:
         return ContractResult(domain, ("no specialised contract for this domain",))

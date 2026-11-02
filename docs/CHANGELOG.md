@@ -4,6 +4,8 @@
 
 ### Ajouté
 
+- Universal Research Engine : repli généraliste (GDELT) pour les marchés sans connecteur spécialisé, sujets partagés entre marchés, 12 états d'information persistants (`intel_market_state`, migration `0006`), file d'attente paginée par passe, rapport de couverture réconcilié (`ambre coverage`), mémorisation des recherches dans le Cognitive Vault, domaines `HEALTH` et `CRYPTO`. Voir `docs/UNIVERSAL_RESEARCH.md` et ADR-015.
+
 - Planificateur de recherche persistant (`intel_jobs`, `intel_job_runs`, migration `0005`) branché dans `ambre worker` : intervalle configurable, bail, créneau unique, arrêt d'urgence sans consommer l'occasion, reprise après plantage, recul après échec, journal. `ambre scheduler-status`. ADR-014.
 
 - Cognitive Vault v0.1 (`ambre.cognitive`, ADR-012) : notes versionnées et reliées, recherche, export Markdown (`ambre vault-export`), registre de règles avec cycle de vie, versions et audit, contraintes immuables, détection de conflits. Migration `0004`. Tests unitaires, d'intégration et de propriété (Hypothesis). Aucune règle n'est encore consommée par un moteur.

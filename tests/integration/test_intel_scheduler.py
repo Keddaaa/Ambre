@@ -256,3 +256,26 @@ def test_status_lists_jobs_and_recent_runs(factory: sessionmaker[Session]) -> No
         snap = status(s, runs_limit=10)
     assert snap["jobs"][0]["name"] == "research" and snap["jobs"][0]["last_status"] == "OK"
     assert [r["status"] for r in snap["runs"]] == ["SKIPPED_HALTED", "OK"]  # newest first
+
+
+def test_the_schedule_survives_a_restart_of_the_whole_process(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'restart.db'}"
+    engine = make_engine(url)
+    Base.metadata.create_all(engine)
+    first = make_session_factory(engine)
+    p = Probe()
+    tick(first, T0, p.spec(), halted=never_halted)
+    engine.dispose()  # the process "dies"
+
+    engine2 = make_engine(url)  # a new process opens the same database
+    second = make_session_factory(engine2)
+    try:
+        assert (
+            tick(second, T0 + timedelta(seconds=INTERVAL - 1), p.spec(), halted=never_halted) == []
+        )
+        again = tick(second, T0 + timedelta(seconds=INTERVAL), p.spec(), halted=never_halted)
+        assert [r.status for r in again] == ["OK"] and len(p.runs) == 2
+        with second() as s:
+            assert s.scalar(select(func.count()).select_from(intel_orm.IntelJobRunRow)) == 2
+    finally:
+        engine2.dispose()

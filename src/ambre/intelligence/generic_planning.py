@@ -5,13 +5,14 @@ for data worth having) while the market is still not ``estimable`` (the question
 something open). Domains without a connector are understood and reported, never faked.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 
 from ambre.intelligence.domain_params import WeatherParams, contract_for
 from ambre.intelligence.models import InfoNeed
 from ambre.intelligence.planning import Gap, Gazetteer, plan_gaps
+from ambre.intelligence.queries import Topic, topic_for
 from ambre.intelligence.resolution import MarketDomain, ResolutionAnalysis
 
 #: Documented forecast_days maximum of the Open-Meteo forecast endpoint (docs/API_CATALOG.md).
@@ -35,16 +36,20 @@ class MarketPlan:
     need: InfoNeed | None = None
     gap: Gap | None = None  # earthquake collection target
     weather: WeatherParams | None = None
+    topic: Topic | None = None
+    level: int = 1  # 1 = specialised connector, 2 = generalist search
     blocking: tuple[str, ...] = ()
     reasons: tuple[str, ...] = ()
 
     @property
     def estimable(self) -> bool:
         """True only when data can be collected AND the question leaves nothing open."""
-        return self.status is PlanStatus.COLLECTABLE and not self.blocking
+        return self.status is PlanStatus.COLLECTABLE and self.level == 1 and not self.blocking
 
 
-def plan_market(analysis: ResolutionAnalysis, gazetteer: Gazetteer, now: datetime) -> MarketPlan:
+def _specialised_plan(
+    analysis: ResolutionAnalysis, gazetteer: Gazetteer, now: datetime
+) -> MarketPlan:
     contract = contract_for(analysis)
 
     def make(
@@ -123,3 +128,25 @@ def plan_market(analysis: ResolutionAnalysis, gazetteer: Gazetteer, now: datetim
         blocking=contract.blocking,
         reasons=(f"no connector for domain {analysis.domain.value}: understood, not collected",),
     )
+
+
+def plan_market(analysis: ResolutionAnalysis, gazetteer: Gazetteer, now: datetime) -> MarketPlan:
+    """The collection plan of a market. No specialised connector is not a dead end: a market with
+    a searchable topic falls back to the generalist news search (level 2). That search yields
+    evidence only: a level-2 plan is never estimable."""
+    plan = _specialised_plan(analysis, gazetteer, now)
+    if plan.status is PlanStatus.NO_CONNECTOR:
+        topic = topic_for(analysis)
+        if topic is not None:
+            return replace(
+                plan,
+                status=PlanStatus.COLLECTABLE,
+                need=InfoNeed.GENERAL_NEWS,
+                topic=topic,
+                level=2,
+                reasons=(
+                    *plan.reasons,
+                    "generalist news search: evidence only, the specialised contract is not met",
+                ),
+            )
+    return plan

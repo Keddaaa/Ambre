@@ -14,11 +14,12 @@ domains:
   TECHNOLOGY:
     [openai, anthropic, google, microsoft, apple, gpt, release, launch, software, model, github, open-weights, ai]
   FINANCE:
-    [stock, shares, bitcoin, btc, ethereum, eth, crypto, nasdaq, "s&p", "market cap", price of]
+    [stock, shares, nasdaq, "s&p", "market cap", price of]
+  CRYPTO: [bitcoin, btc, ethereum, eth, crypto, cryptocurrency, solana, stablecoin]
   GEOPOLITICS:
     [war, ceasefire, election, president, sanctions, treaty, nato, ukraine, russia, israel, gaza, iran, taiwan, invasion]
-  SCIENCE:
-    [nobel, vaccine, nasa, spacex, starship, physics, quantum, millennium, "peer review", clinical trial]
+  SCIENCE: [nobel, nasa, spacex, starship, physics, quantum, millennium, "peer review"]
+  HEALTH: [vaccine, outbreak, pandemic, epidemic, measles, covid, fda, disease, "clinical trial"]
 
 reference_sources:
   [NOAA, NWS, "National Weather Service", USGS, "Federal Reserve", BLS, "Bureau of Labor Statistics", Eurostat, ECB, NASA, WHO, CDC, "Open-Meteo"]

@@ -121,11 +121,11 @@ def test_the_stored_description_is_never_assumed() -> None:
 def test_domains_are_classified_from_configurable_keywords() -> None:
     cases = {
         "Will the CPI inflation rate exceed 4% in 2027?": MarketDomain.ECONOMY,
-        "Will Bitcoin trade above $150,000 by December 31, 2026?": MarketDomain.FINANCE,
+        "Will Bitcoin trade above $150,000 by December 31, 2026?": MarketDomain.CRYPTO,
         "Will OpenAI release a new model before 2027?": MarketDomain.TECHNOLOGY,
         "Will the Lakers win the NBA championship in 2027?": MarketDomain.SPORT,
         "Will a ceasefire be signed in Ukraine by 2027?": MarketDomain.GEOPOLITICS,
-        "Will a vaccine for X be approved by 2030?": MarketDomain.SCIENCE,
+        "Will a vaccine for X be approved by 2030?": MarketDomain.HEALTH,
         "Will it rain in Paris tomorrow?": MarketDomain.WEATHER,
         "Will my cat like the new food?": MarketDomain.GENERAL,
     }

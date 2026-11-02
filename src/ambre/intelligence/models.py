@@ -45,6 +45,7 @@ class InfoNeed(StrEnum):
 
     RECENT_EARTHQUAKES = "recent_earthquakes"
     WEATHER_FORECAST = "weather_forecast"
+    GENERAL_NEWS = "general_news"
 
 
 class ObservationKind(StrEnum):
@@ -150,7 +151,22 @@ class WeatherForecastPayload(_Frozen):
         return v
 
 
-Payload = Annotated[EarthquakePayload | WeatherForecastPayload, Field(discriminator="payload_type")]
+class NewsArticlePayload(_Frozen):
+    """A news article as listed by a search engine: a report, never a verified fact."""
+
+    payload_type: Literal["news_article"] = "news_article"
+    url: str
+    title: str | None = None
+    domain: str | None = None
+    language: str | None = None
+    source_country: str | None = None
+    seen_at: AwareDatetime | None = None  # when the search engine first saw it
+
+
+Payload = Annotated[
+    EarthquakePayload | WeatherForecastPayload | NewsArticlePayload,
+    Field(discriminator="payload_type"),
+]
 
 
 class Observation(_Frozen):

@@ -12,11 +12,13 @@ from enum import StrEnum
 from ambre.intelligence.domain_params import WeatherParams
 from ambre.intelligence.models import (
     EarthquakePayload,
+    NewsArticlePayload,
     Observation,
     VerificationStatus,
     WeatherForecastPayload,
 )
 from ambre.intelligence.planning import Gap
+from ambre.intelligence.queries import Topic, topic_relevant
 
 #: A forecast grid point is a few kilometres from the requested place (Open-Meteo snaps it).
 MAX_PLACE_DISTANCE_DEG = 0.25
@@ -24,6 +26,7 @@ MAX_PLACE_DISTANCE_DEG = 0.25
 
 class CriteriaStatus(StrEnum):
     FORECAST_MATCHES_QUESTION = "forecast_matches_question"
+    NEWS_MENTION_CRITERIA_UNREAD = "news_mention_criteria_unread"
     THRESHOLD_MET_CRITERIA_UNREAD = "threshold_met_criteria_unread"
     THRESHOLD_UNKNOWN = "threshold_unknown"
 
@@ -112,5 +115,31 @@ def match_forecast(
             f"forecast of {p.variable} for {params.location_name} on {p.target_date}",
             "a forecast is a model output, not an observation of the outcome",
             "resolution criteria not read: input for a validated model only",
+        ),
+    )
+
+
+def match_news(obs: Observation, topic: Topic, market_id: str, now: datetime) -> MarketLink | None:
+    """Link a news article to a market when its title is about the market's topic: the market's
+    entity plus one of the market's own terms. The link says "this article mentions the subject";
+    it is neither proof of the event nor a signal."""
+    p = obs.payload
+    if not isinstance(p, NewsArticlePayload) or p.title is None:
+        return None
+    if (obs.available_at or obs.ingested_at) > now:
+        return None
+    if not topic_relevant(p.title, topic):
+        return None
+    return MarketLink(
+        market_id=market_id,
+        observation_id=obs.observation_id,
+        relation="news_mention",
+        criteria_status=CriteriaStatus.NEWS_MENTION_CRITERIA_UNREAD,
+        evidence_level=obs.verification_status.value,
+        usable_for_prediction=False,
+        reasons=(
+            f"title matches topic {topic.key}",
+            "a headline is a report, not verified evidence of the event",
+            "resolution criteria not read: context only",
         ),
     )
