@@ -29,5 +29,22 @@ curl localhost:8000/evaluation
 ## Limites
 
 - Le modèle actuel est une baseline non validée (ADR-004) : un résultat proche du prix du marché est le comportement attendu.
-- Pas de comparaison par catégorie ni par horizon, pas de backtesting chronologique complet.
+- Pas de comparaison par catégorie ni par horizon. Le backtesting est minimal (voir ci-dessous).
 - Les marchés déjà résolus à la première synchro ne sont jamais scorés : seuls ceux suivis pendant leur vie comptent.
+
+## Backtest chronologique
+
+Source : `src/ambre/evaluation_engine/backtest.py` (pur), `repositories.backtest_markets`, `ambre backtest`.
+
+Contrairement à `evaluate`, il ne dépend d'aucune simulation : il rejoue l'historique des snapshots.
+
+- **Observation :** une par marché, au premier snapshot (`observed_at` minimal) ; le prix est la probabilité de ce snapshot.
+- **Sans fuite :** pour chaque observation, la baseline `BaseRateShrinkage` est réajustée avec **uniquement** les marchés dont la résolution est connue **strictement avant** l'instant de décision. Une résolution à l'instant exact n'est pas connue.
+- **Exclus :** marchés non résolus, résolutions autres que `YES`/`NO`, résolution sans `resolution_at`, premier snapshot postérieur ou égal à la résolution (ils servent toutefois à l'ajustement une fois leur résolution passée).
+- **Sortie :** le même rapport que `evaluate` (Brier, log loss, calibration, différence appariée) plus un détail par observation (`folds`, dont `n_train`).
+
+```bash
+uv run ambre backtest
+```
+
+Limites : un seul prix par marché (le premier), pas de découpage ni de graine configurables, et le modèle testé est la baseline non validée (ADR-004). Un résultat proche du prix du marché est attendu ; `sufficient_sample` reste faux sous 30 marchés.

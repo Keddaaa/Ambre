@@ -8,6 +8,7 @@ from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from ambre.domain.models import BinaryMarket, MarketSnapshot, SimulationStatus
+from ambre.evaluation_engine.backtest import BacktestMarket
 from ambre.infrastructure.orm import (
     ControlStateRow,
     DecisionRow,
@@ -360,3 +361,34 @@ def resolved_decision_scores(
             (decision.market_probability, decision.estimated_probability, str(resolution)),
         )
     return list(first.values())
+
+
+def backtest_markets(session: Session) -> list[BacktestMarket]:
+    """YES/NO markets with a known resolution date, seen at their first snapshot.
+
+    The decision instant is the earliest ``observed_at`` and the price is that
+    snapshot's probability. Markets without a snapshot, unresolved ones, other
+    resolutions (CANCEL, MKT, ...) and undated resolutions are left out.
+    """
+    stmt = (
+        select(SnapshotRow.market_id, SnapshotRow.observed_at, SnapshotRow.probability)
+        .join(MarketRow, MarketRow.id == SnapshotRow.market_id)
+        .where(MarketRow.resolution.in_(("YES", "NO")), MarketRow.resolution_at.is_not(None))
+        .order_by(SnapshotRow.market_id, SnapshotRow.observed_at, SnapshotRow.id)
+    )
+    first: dict[str, tuple[datetime, float]] = {}
+    for market_id, observed_at, probability in session.execute(stmt).all():
+        first.setdefault(market_id, (observed_at, probability))
+    markets = {
+        m.id: m for m in session.scalars(select(MarketRow).where(MarketRow.id.in_(list(first))))
+    }
+    return [
+        BacktestMarket(
+            market_id=market_id,
+            decision_at=decision_at,
+            market_probability=probability,
+            resolution_at=markets[market_id].resolution_at,
+            outcome=markets[market_id].resolution == "YES",
+        )
+        for market_id, (decision_at, probability) in sorted(first.items())
+    ]

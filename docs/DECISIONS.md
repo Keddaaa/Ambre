@@ -127,3 +127,12 @@
 - **Raisons :** être « intelligent » en recherche, c'est chercher selon le besoin du marché, pas selon les API installées ; mais ce qu'on trouve par la presse n'est ni vérifié ni une prédiction.
 - **Compromis :** un seul fournisseur généraliste, soumis à une limite de débit stricte et, le 2026-11-02, refusant l'IP (HTTP 429) : la couverture réelle par la presse n'est donc pas encore démontrée. Le niveau 3 (investigation) n'est pas implémenté. Les sources officielles nommées par un marché ne sont pas interrogées directement. Un fournisseur manquant ou en pause est signalé une fois par passe, pas par ligne de journal.
 - **Conséquences :** `InfoNeed.GENERAL_NEWS`, charge utile `NewsArticlePayload`, `ambre coverage`, réglages `max_calls_per_pass`, `max_wait_in_pass_seconds`, `news_timespan`, `news_max_records`. Aucune décision, position ni écriture du ledger n'est produite (testé).
+
+## ADR-016 — Backtest chronologique minimal, indépendant des simulations
+
+- **Problème :** `evaluate` ne score que les marchés suivis pendant une simulation ; rien ne mesure la baseline sur l'historique déjà synchronisé, ni ne garantit que le taux de base n'a pas vu l'issue qu'il prédit.
+- **Options :** réutiliser `evaluate` ; validation croisée aléatoire ; rejeu chronologique avec réajustement à chaque observation.
+- **Choix :** rejeu chronologique. Une observation par marché (premier snapshot, comme ADR-007) ; le taux de base n'utilise que les résolutions connues strictement avant l'instant de décision.
+- **Raisons :** une validation aléatoire laisserait le futur informer le passé ; le réajustement par observation reproduit ce que le système aurait su.
+- **Compromis :** O(n²) sur le nombre de marchés ; premier prix seulement ; la baseline testée n'est pas un modèle appris. Aucun protocole de graine ni de découpage encore.
+- **Conséquences :** nouvelle commande `ambre backtest` (lecture seule). `evaluation_engine.backtest` reste pur ; la requête vit dans `infrastructure`. Aucune interdiction d'`AGENTS.md` n'est levée et aucun avantage sur le marché n'est affirmé.

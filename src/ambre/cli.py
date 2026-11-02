@@ -1,4 +1,4 @@
-"""`ambre` command line: init-db, sync, cycle, worker, research, evaluate, new-simulation.
+"""`ambre` command line: init-db, sync, cycle, worker, research, evaluate, backtest, new-simulation.
 
 Every command first prints ``mode=<MODE> orders_enabled=<bool> db=<masked url>``
 on stdout, then its report as one JSON line per report. Logs go to stderr.
@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from ambre.cognitive.vault import export_markdown
 from ambre.config.settings import Settings
 from ambre.data_engine.sync import MarketSyncService, SyncReport
+from ambre.evaluation_engine.backtest import run_backtest
 from ambre.execution_engine.executor import ExecutionModeNotAvailable
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.db import make_engine, make_session_factory
@@ -309,6 +310,14 @@ def evaluate(factory: sessionmaker[Session]) -> dict[str, Any] | None:
         return asdict(evaluation_for_simulation(session, sim.id))
 
 
+def backtest(factory: sessionmaker[Session], settings: Settings | None = None) -> dict[str, Any]:
+    """Walk-forward backtest of the base-rate baseline on resolved markets (read-only)."""
+    cfg = (settings or Settings()).prediction
+    with factory() as session:
+        result = run_backtest(repo.backtest_markets(session), cfg)
+    return asdict(result)
+
+
 # --------------------------------------------------------------------------- entry point
 
 
@@ -328,6 +337,7 @@ def _parser() -> argparse.ArgumentParser:
     export = sub.add_parser("vault-export", help="export the Cognitive Vault as Markdown files")
     export.add_argument("--dir", required=True, type=Path)
     sub.add_parser("evaluate", help="Brier, log loss and calibration on resolved markets")
+    sub.add_parser("backtest", help="chronological walk-forward backtest, no look-ahead")
     new = sub.add_parser("new-simulation", help="archive the active simulation, start a new one")
     new.add_argument("--name", required=True)
     return parser
@@ -391,6 +401,9 @@ def main(
                 logger.error("no active simulation; run `ambre cycle` first")
                 return 1
             _emit(result)
+            return 0
+        if args.command == "backtest":
+            _emit(backtest(factory, settings))
             return 0
         if args.command == "new-simulation":
             _emit(new_simulation(settings, factory, clock, args.name))
