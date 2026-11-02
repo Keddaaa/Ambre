@@ -14,3 +14,18 @@ def session() -> Iterator[Session]:
     with make_session_factory(engine)() as s:
         yield s
     engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The research path builds its own HTTP client; tests must never reach a real provider."""
+    import httpx
+
+    from ambre import cli
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("network disabled in tests", request=request)
+
+    monkeypatch.setattr(
+        cli, "default_http_factory", lambda: httpx.AsyncClient(transport=httpx.MockTransport(refuse))
+    )

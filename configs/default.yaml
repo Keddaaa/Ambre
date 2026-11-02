@@ -24,6 +24,9 @@ intelligence:
   lookback_days: 7
   fetch_limit: 500
   max_markets_scanned: 5000
+  schedule_research: true
+  research_interval_seconds: 600
+  job_lease_seconds: 900
   min_value_score: 0.02
   failure_backoff_base_seconds: 60
   failure_backoff_cap_seconds: 3600
