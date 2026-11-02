@@ -23,7 +23,9 @@ from ambre.config.settings import Settings
 from ambre.infrastructure import repositories as repo
 from ambre.intelligence import store
 from ambre.intelligence.budget import BudgetDecision, Priority, backoff_seconds, decide
-from ambre.intelligence.matching import match_observation
+from ambre.intelligence.context import FeatureSet, build_feature_set
+from ambre.intelligence.generic_planning import MarketPlan, PlanStatus, plan_market
+from ambre.intelligence.matching import match_forecast, match_observation
 from ambre.intelligence.models import (
     FetchResult,
     InfoNeed,
@@ -32,9 +34,10 @@ from ambre.intelligence.models import (
     ResultKind,
 )
 from ambre.intelligence.orm import IntelRequestRow
-from ambre.intelligence.planning import Gap, Gazetteer, plan_gaps
+from ambre.intelligence.planning import Gazetteer
 from ambre.intelligence.providers.base import Provider
 from ambre.intelligence.registry import Registry
+from ambre.intelligence.resolution import ResearchRules, analyze_market, load_rules
 from ambre.intelligence.routing import ProviderHealth, route
 from ambre.intelligence.value import estimate_value
 from ambre.pipeline import to_market, to_snapshot
@@ -57,35 +60,94 @@ class ResearchReport:
     #: markets whose information need was NOT satisfied this pass (skipped or failed). A market
     #: is never considered informed by a search that did not happen or did not succeed.
     markets_without_information: list[str] = field(default_factory=list)
+    #: what the planner understood about every scanned open market, by plan status and domain
+    plans: dict[str, int] = field(default_factory=dict)
+    domains: dict[str, int] = field(default_factory=dict)
+    #: markets recognised but not collectable (ambiguous or beyond the forecast horizon)
+    not_collectable: list[dict[str, Any]] = field(default_factory=list)
 
 
-def _group_gaps(
-    gaps: list[tuple[Gap, float, datetime]],
-) -> dict[InfoNeed, list[tuple[Gap, float, datetime]]]:
-    groups: dict[InfoNeed, list[tuple[Gap, float, datetime]]] = defaultdict(list)
-    for item in gaps:
-        groups[item[0].need].append(item)
+@dataclass(frozen=True)
+class Item:
+    """A collectable market: its plan, the market price and when it was created."""
+
+    plan: MarketPlan
+    q: float
+    created_at: datetime
+
+    @property
+    def market_id(self) -> str:
+        return self.plan.market_id
+
+
+def _group_key(plan: MarketPlan) -> str:
+    """Markets that can share one request share a key (one earthquake feed, one place and
+    variable for weather)."""
+    if plan.weather is not None:
+        w = plan.weather
+        return f"{w.latitude:.2f},{w.longitude:.2f}|{w.timezone}|{w.variable}"
+    return "global"
+
+
+def _group_items(items: list[Item]) -> dict[tuple[InfoNeed, str], list[Item]]:
+    groups: dict[tuple[InfoNeed, str], list[Item]] = defaultdict(list)
+    for item in items:
+        assert item.plan.need is not None
+        groups[(item.plan.need, _group_key(item.plan))].append(item)
     return dict(groups)
 
 
-def _earthquake_params(
-    gaps: list[tuple[Gap, float, datetime]], settings: Settings, now: datetime
+def _params_for(
+    need: InfoNeed, group: list[Item], settings: Settings, now: datetime
 ) -> dict[str, Any]:
     cfg = settings.intelligence
-    thresholds = [
-        g.min_magnitude if g.min_magnitude is not None else cfg.earthquake_floor_magnitude
-        for g, _, _ in gaps
-    ]
+    if need is InfoNeed.RECENT_EARTHQUAKES:
+        thresholds = [
+            i.plan.gap.min_magnitude
+            if i.plan.gap is not None and i.plan.gap.min_magnitude is not None
+            else cfg.earthquake_floor_magnitude
+            for i in group
+        ]
+        return {
+            "min_magnitude": min(thresholds),
+            "since": now - timedelta(days=cfg.lookback_days),
+            "limit": cfg.fetch_limit,
+        }
+    first = group[0].plan.weather
+    assert first is not None
+    days = max(
+        ((i.plan.weather.target_date - now.date()).days for i in group if i.plan.weather), default=0
+    )
     return {
-        "min_magnitude": min(thresholds),
-        "since": now - timedelta(days=cfg.lookback_days),
-        "limit": cfg.fetch_limit,
+        "latitude": first.latitude,
+        "longitude": first.longitude,
+        "timezone": first.timezone,
+        "variable": first.variable,
+        "forecast_days": days + 1,
     }
 
 
+def _objective(item: Item) -> str:
+    plan = item.plan
+    if plan.gap is not None:
+        return plan.gap.objective
+    w = plan.weather
+    assert w is not None
+    return f"collect the {w.variable} forecast for {w.location_name} on {w.target_date.isoformat()}"
+
+
+def _unresolved(item: Item) -> list[str]:
+    plan = item.plan
+    base = list(plan.gap.unresolved) if plan.gap is not None else []
+    return sorted({*base, *plan.blocking, *plan.analysis.missing})
+
+
 async def _fetch(provider: Provider, need: InfoNeed, params: dict[str, Any]) -> FetchResult:
-    if need is InfoNeed.RECENT_EARTHQUAKES:
-        return await provider.fetch_latest(**params)
+    call = {
+        k: v for k, v in params.items() if k != "group_key"
+    }  # bookkeeping, not an API parameter
+    if need in (InfoNeed.RECENT_EARTHQUAKES, InfoNeed.WEATHER_FORECAST):
+        return await provider.fetch_latest(**call)
     return FetchResult(kind=ResultKind.UNSUPPORTED, detail=f"no fetch routine for {need.value}")
 
 
@@ -115,22 +177,41 @@ async def research_pass(
     registry: Registry,
     providers: Mapping[str, Provider],
     gazetteer: Gazetteer,
+    rules: ResearchRules | None = None,
 ) -> ResearchReport:
     """Run one research pass at ``now``. The caller commits."""
     report = ResearchReport()
+    rules = rules or load_rules()
     pairs = repo.latest_snapshots_for_open_markets(
         session, settings.intelligence.max_markets_scanned
     )
-    gaps: list[tuple[Gap, float, datetime]] = []
+    items: list[Item] = []
     for market_row, snap_row in pairs:
         market, snap = to_market(market_row), to_snapshot(snap_row)
-        gap = plan_gaps(market.id, market.question, market.close_at, now, gazetteer)
-        if gap is not None:
-            gaps.append((gap, snap.probability, market.created_at))
+        analysis = analyze_market(
+            market.id, market.question, market.close_at, now, gazetteer, rules
+        )
+        plan = plan_market(analysis, gazetteer, now)
+        report.plans[plan.status.value] = report.plans.get(plan.status.value, 0) + 1
+        report.domains[plan.domain.value] = report.domains.get(plan.domain.value, 0) + 1
+        if plan.status is PlanStatus.COLLECTABLE:
+            items.append(Item(plan, snap.probability, market.created_at))
+        elif (
+            plan.status in (PlanStatus.AMBIGUOUS, PlanStatus.OUT_OF_HORIZON)
+            and len(report.not_collectable) < 50
+        ):
+            report.not_collectable.append(
+                {
+                    "market_id": plan.market_id,
+                    "domain": plan.domain.value,
+                    "status": plan.status.value,
+                    "blocking": list(plan.blocking),
+                }
+            )
 
-    for need, group in _group_gaps(gaps).items():
+    for (need, key), group in _group_items(items).items():
         entry = await _research_group(
-            session, settings, now, registry, providers, need, group, report
+            session, settings, now, registry, providers, need, key, group, report
         )
         report.requests.append(entry)
     return report
@@ -143,15 +224,40 @@ async def _research_group(
     registry: Registry,
     providers: Mapping[str, Provider],
     need: InfoNeed,
-    group: list[tuple[Gap, float, datetime]],
+    group_key: str,
+    group: list[Item],
     report: ResearchReport,
 ) -> dict[str, Any]:
     request_id = str(uuid.uuid4())
-    market_ids = sorted({g.market_id for g, _, _ in group})
-    params = _earthquake_params(group, settings, now)
+    market_ids = sorted({i.market_id for i in group})
+    params = _params_for(need, group, settings, now)
+    params["group_key"] = group_key
     explanation: dict[str, Any] = {
-        "why": [{"market_id": g.market_id, "objective": g.objective, "q": q} for g, q, _ in group],
-        "unresolved": sorted({u for g, _, _ in group for u in g.unresolved}),
+        "why": [{"market_id": i.market_id, "objective": _objective(i), "q": i.q} for i in group],
+        "understanding": [
+            {
+                "market_id": i.market_id,
+                "domain": i.plan.domain.value,
+                "estimable": i.plan.estimable,
+                "blocking": list(i.plan.blocking),
+                "yes_condition": i.plan.analysis.yes_condition,
+                "no_condition": i.plan.analysis.no_condition,
+                "event_period": (
+                    None
+                    if i.plan.analysis.period is None
+                    else {
+                        "kind": i.plan.analysis.period.kind.value,
+                        "end": i.plan.analysis.period.end.isoformat(),
+                    }
+                ),
+                "closes_at": (
+                    i.plan.analysis.closes_at.isoformat() if i.plan.analysis.closes_at else None
+                ),
+                "ambiguities": list(i.plan.analysis.ambiguities),
+            }
+            for i in group
+        ],
+        "unresolved": sorted({u for i in group for u in _unresolved(i)}),
         "markets": market_ids,
         "usefulness_note": "not assessed: measured in the learning phase, never assumed",
     }
@@ -228,7 +334,9 @@ async def _research_group(
     for card in cards:
         if not (card.enabled and card.provides(need) and card.freshness_seconds is not None):
             continue
-        known = store.last_request(session, need.value, card.id, CACHE_STATUSES)
+        known = store.last_request(
+            session, need.value, card.id, CACHE_STATUSES, group_key=group_key
+        )
         if known is None:
             continue
         age = (now - known.created_at).total_seconds()
@@ -250,16 +358,16 @@ async def _research_group(
     assert chosen_card is not None
     card_id = chosen_card.id
     prior = chosen_card.capabilities[need]
-    last = store.last_request(session, need.value, card_id, CACHE_STATUSES)
+    last = store.last_request(session, need.value, card_id, CACHE_STATUSES, group_key=group_key)
     cache_age = (now - last.created_at).total_seconds() if last is not None else None
     scored = [
         estimate_value(
-            market_probability=q,
+            market_probability=i.q,
             relevance_prior=prior,
             cache_age_seconds=cache_age,
             freshness_seconds=chosen_card.freshness_seconds,
         )
-        for _, q, _ in group
+        for i in group
     ]
     best = max(scored, key=lambda e: e.score)
     threshold = settings.intelligence.min_value_score
@@ -366,7 +474,7 @@ def _store_and_link(
     now: datetime,
     request_id: str,
     observations: tuple[Observation, ...],
-    group: list[tuple[Gap, float, datetime]],
+    group: list[Item],
     report: ResearchReport,
     explanation: dict[str, Any],
 ) -> None:
@@ -376,12 +484,45 @@ def _store_and_link(
     session.flush()
     linked: dict[str, list[str]] = defaultdict(list)
     for obs in observations:
-        for gap, _, created_at in group:
-            link = match_observation(obs, gap, market_created_at=created_at, now=now)
+        for item in group:
+            link = None
+            if item.plan.gap is not None:
+                link = match_observation(
+                    obs, item.plan.gap, market_created_at=item.created_at, now=now
+                )
+            elif item.plan.weather is not None:
+                link = match_forecast(obs, item.plan.weather, item.market_id, now)
             if link is not None and store.save_link(session, link, now):
                 report.new_links += 1
-                linked[gap.market_id].append(obs.observation_id)
+                linked[item.market_id].append(obs.observation_id)
     explanation["links"] = {m: ids for m, ids in linked.items()}
     row = session.get(IntelRequestRow, request_id)
     if row is not None:
         row.explanation = dict(explanation)  # reassign so the JSON change is persisted
+
+
+def market_context(
+    session: Session,
+    plan: MarketPlan,
+    registry: Registry,
+    now: datetime,
+    *,
+    market_created_at: datetime,
+) -> FeatureSet:
+    """The dated context features of one market, from what the vault of observations holds now."""
+    collected_at: datetime | None = None
+    if plan.need is InfoNeed.RECENT_EARTHQUAKES:
+        for card in registry.providers_for(plan.need):
+            last = store.last_request(
+                session, plan.need.value, card.id, CACHE_STATUSES, group_key="global"
+            )
+            if last is not None and (collected_at is None or last.created_at > collected_at):
+                collected_at = last.created_at
+    return build_feature_set(
+        plan,
+        store.market_observations(session, plan.market_id),
+        registry,
+        now,
+        market_created_at=market_created_at,
+        collected_at=collected_at,
+    )

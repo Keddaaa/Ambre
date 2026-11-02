@@ -9,3 +9,35 @@ regions:
   san_francisco:
     aliases: ["san francisco", "bay area"]
     bbox: [37.0, 38.5, -123.5, -121.5]
+  # Cities for point-based data (forecasts). `center` is the point queried; the bbox is a modelling
+  # choice used to read a place name, not an official boundary.
+  new_york_city:
+    aliases: ["new york city", "nyc", "new york"]
+    bbox: [40.4, 41.0, -74.3, -73.7]
+    center: [40.7128, -74.0060]
+    timezone: America/New_York
+  london:
+    aliases: ["london"]
+    bbox: [51.3, 51.7, -0.5, 0.3]
+    center: [51.5074, -0.1278]
+    timezone: Europe/London
+  paris:
+    aliases: ["paris"]
+    bbox: [48.7, 49.0, 2.1, 2.6]
+    center: [48.8566, 2.3522]
+    timezone: Europe/Paris
+  chicago:
+    aliases: ["chicago"]
+    bbox: [41.6, 42.1, -87.9, -87.4]
+    center: [41.8781, -87.6298]
+    timezone: America/Chicago
+  los_angeles:
+    aliases: ["los angeles"]
+    bbox: [33.7, 34.4, -118.7, -117.9]
+    center: [34.0522, -118.2437]
+    timezone: America/Los_Angeles
+  tokyo:
+    aliases: ["tokyo"]
+    bbox: [35.5, 35.9, 139.4, 140.0]
+    center: [35.6762, 139.6503]
+    timezone: Asia/Tokyo

@@ -4,6 +4,8 @@
 
 ### Ajouté
 
+- Resolution Intelligence Engine, planificateur générique à neuf domaines, connecteur Open-Meteo (prévisions journalières), Context Feature Bridge et garde d'estimation `INSUFFICIENT_MODEL`. `ambre research` traite séismes et météo. Voir `docs/RESOLUTION_INTELLIGENCE.md` et ADR-013.
+
 - `ambre.intelligence` : premier pipeline d'acquisition d'information de bout en bout, avec USGS (séismes). Registre des fournisseurs (`configs/providers.yaml`), Budget Controller, enveloppe typée à quatre horloges, planificateur de lacunes, routeur expliqué, estimateur de valeur (classement a priori), mémoire de recherche, liens candidats vers les marchés. `ambre research`. Migration `0003`. ADR-011. Ne produit aucune décision ni mise (testé).
 
 - Phase A du Global Intelligence Network : `API_CATALOG.md` (8 fournisseurs vérifiés dans leur documentation et par une requête GET réelle, le 2026-11-02), `API_LIMITS.md`, `DATA_LICENSES.md`, `INTELLIGENCE_ARCHITECTURE.md`, ADR-010. Aucun code : les modules `ambre.intelligence` arrivent aux phases B à G.

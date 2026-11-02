@@ -23,7 +23,7 @@ Les autres documents de `docs/` décrivent l'état du code. Ils ne dupliquent pa
 | `data_engine` | Synchronisation incrémentale | non |
 | `feature_engine`, `prediction_engine`, `value_engine`, `strategy_engine`, `risk_engine`, `survival_engine`, `evaluation_engine` | Calculs | **oui** |
 | `portfolio`, `execution_engine` | Ledger, positions, exécuteur papier | non |
-| `intelligence` | Réseau d'acquisition d'information (ADR-010) : `models`, `budget`, `registry`, `normalization`, `planning`, `value`, `routing`, `matching` sont **purs** ; `providers/`, `store`, `orm`, `service`, `connectors` ne le sont pas. Lecture seule, ne décide jamais d'une mise | mixte |
+| `intelligence` | Réseau d'acquisition d'information (ADR-010) : `models`, `budget`, `registry`, `normalization`, `planning`, `value`, `routing`, `matching`, `resolution`, `domain_params`, `generic_planning`, `context`, `estimation` sont **purs** ; `providers/`, `store`, `orm`, `service`, `connectors` ne le sont pas. Lecture seule, ne décide jamais d'une mise | mixte |
 | `pipeline.py`, `cli.py`, `api/` | Orchestration, CLI, FastAPI | non |
 
 **Règle de dépendance :** les modules purs n'importent ni `infrastructure` ni `integrations`. Les moteurs quantitatifs ne dépendent pas de `intelligence`, et `intelligence` n'importe ni `execution_engine`, ni `portfolio`, ni `risk_engine` (testé). Le réseau reste dans `integrations/manifold`, la persistance dans `infrastructure`.

@@ -9,11 +9,21 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from ambre.intelligence.models import EarthquakePayload, Observation, VerificationStatus
+from ambre.intelligence.domain_params import WeatherParams
+from ambre.intelligence.models import (
+    EarthquakePayload,
+    Observation,
+    VerificationStatus,
+    WeatherForecastPayload,
+)
 from ambre.intelligence.planning import Gap
+
+#: A forecast grid point is a few kilometres from the requested place (Open-Meteo snaps it).
+MAX_PLACE_DISTANCE_DEG = 0.25
 
 
 class CriteriaStatus(StrEnum):
+    FORECAST_MATCHES_QUESTION = "forecast_matches_question"
     THRESHOLD_MET_CRITERIA_UNREAD = "threshold_met_criteria_unread"
     THRESHOLD_UNKNOWN = "threshold_unknown"
 
@@ -68,4 +78,39 @@ def match_observation(
         evidence_level=obs.verification_status.value,
         usable_for_prediction=False,
         reasons=tuple(reasons),
+    )
+
+
+def match_forecast(
+    obs: Observation, params: WeatherParams, market_id: str, now: datetime
+) -> MarketLink | None:
+    """Link a forecast to the market it forecasts: same variable, same calendar day, same place.
+
+    The link says "this is the forecast for what the question asks"; it is an input for a model,
+    never a statement that the market will resolve a given way.
+    """
+    p = obs.payload
+    if not isinstance(p, WeatherForecastPayload):
+        return None
+    if p.variable != params.variable or p.target_date != params.target_date.isoformat():
+        return None
+    if (
+        abs(p.latitude - params.latitude) > MAX_PLACE_DISTANCE_DEG
+        or abs(p.longitude - params.longitude) > MAX_PLACE_DISTANCE_DEG
+    ):
+        return None
+    if (obs.available_at or obs.ingested_at) > now:
+        return None
+    return MarketLink(
+        market_id=market_id,
+        observation_id=obs.observation_id,
+        relation="forecast_input",
+        criteria_status=CriteriaStatus.FORECAST_MATCHES_QUESTION,
+        evidence_level=obs.verification_status.value,
+        usable_for_prediction=False,
+        reasons=(
+            f"forecast of {p.variable} for {params.location_name} on {p.target_date}",
+            "a forecast is a model output, not an observation of the outcome",
+            "resolution criteria not read: input for a validated model only",
+        ),
     )

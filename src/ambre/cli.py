@@ -231,9 +231,7 @@ def _parser() -> argparse.ArgumentParser:
     work = sub.add_parser("worker", help="loop sync + cycle until Ctrl-C")
     work.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
     work.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
-    sub.add_parser(
-        "research", help="one information-seeking pass (read-only, never places a bet)"
-    )
+    sub.add_parser("research", help="one information-seeking pass (read-only, never places a bet)")
     sub.add_parser("evaluate", help="Brier, log loss and calibration on resolved markets")
     new = sub.add_parser("new-simulation", help="archive the active simulation, start a new one")
     new.add_argument("--name", required=True)
