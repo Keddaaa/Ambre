@@ -13,8 +13,8 @@ Dernière mise à jour : 2026-11-02. Branche : `feat/backtest`. Mode : PAPER uni
 ## Mesure réelle de l'ingestion de presse (2026-11-02)
 
 - 1 requête à Spaceflight News : 50 articles de 8 éditeurs, 49 événements distincts, 1 événement à plusieurs sources.
-- 3 marchés reliés (tous à un même article sur un lancement de Falcon 9) ; 3 lignes de caractéristiques `news.*` journalisées ; 0 lien utilisable pour une prédiction.
-- **Une des trois correspondances est fausse** : « SpaceX stock crash and close below $100 » reliée à « … close out October … » (le terme « close »). La règle de rapprochement (`topic_relevant`) est trop permissive avec les termes génériques. Elle sert aussi le chemin GDELT : à resserrer avec un test avant de s'appuyer sur ces caractéristiques.
+- 3 marchés reliés au premier passage (un même article sur un lancement de Falcon 9) ; 0 lien utilisable pour une prédiction.
+- **Une des trois correspondances était fausse** : « SpaceX stock crash and close below $100 » reliée à « … close out October … » (le terme « close »). Corrigé : `topic_relevant` ignore désormais les mots de condition génériques (`GENERIC_TERMS`) quand le marché a des termes propres, sans jamais devenir plus laxiste (un sujet fait uniquement de termes génériques garde l'ancienne règle). Le lien faux et la ligne de journal qui n'en dérivait que ont été supprimés de la base locale ; il reste 2 liens corrects et 2 lignes `news.*`.
 - Aucun modèle validé, aucune amélioration sur le prix démontrée.
 
 ## Constats à garder en tête
@@ -25,7 +25,7 @@ Dernière mise à jour : 2026-11-02. Branche : `feat/backtest`. Mode : PAPER uni
 
 ## Ordre de travail décidé
 
-1. Resserrer le rapprochement des titres (termes génériques), avec un test sur le cas « close ».
+1. ~~Resserrer le rapprochement des titres~~ : fait (6 tests, dont le cas « close »). La liste `GENERIC_TERMS` est écrite à la main : à élargir seulement sur des cas réels.
 2. Lancer le worker en continu pour que le journal se remplisse.
 3. Moteur historique : marchés résolus, prix reconstruits depuis `GET /v0/bets` (`probBefore` / `probAfter` / `createdTime`, vérifié en lecture), sans fuite temporelle. **En pause** : schéma de lecture vérifié, rien d'écrit.
 4. Mesure de la contribution des sources, puis seulement un modèle.

@@ -180,19 +180,45 @@ def _has(text: str, word: str) -> bool:
     return re.search(rf"(?<![\w]){re.escape(word)}(?![\w])", text, re.IGNORECASE) is not None
 
 
+#: Words that appear in market questions to state a condition, not a subject. A headline that
+#: shares only one of them with a market is about something else ("close out October" is not
+#: about a stock closing below a price), so they never decide relevance on their own.
+GENERIC_TERMS = frozenset(
+    {
+        "above", "again", "another", "anyday", "below", "between", "close", "closed", "closes",
+        "during", "ever", "every", "exceed", "exceeds", "least", "less", "reach", "reaches",
+        "than", "through", "times", "under", "until", "within",
+    }
+)  # fmt: skip
+
+
+def _specific_terms(terms: Sequence[str], *, at_least: int) -> Sequence[str]:
+    """The terms that carry the subject. When too few remain, the market's own terms are kept
+    as they are: dropping them would make the rule looser, never stricter."""
+    specific = [t for t in terms if t not in GENERIC_TERMS]
+    return specific if len(specific) >= at_least else terms
+
+
+def _mentions(title: str, term: str) -> bool:
+    return (
+        _has(title, term)
+        or _has(title, term.rstrip("s"))
+        or _has(title, term + "s")
+        or _has(title, term + "es")
+    )
+
+
 def topic_relevant(title: str, topic: Topic) -> bool:
     """Is an article title about this market's topic? The entity must be present together with
-    one of the market's own terms; without an entity, at least two terms must appear."""
+    one of the market's own subject terms; without an entity, at least two terms must appear.
+    A generic condition word (see ``GENERIC_TERMS``) does not count when the market has
+    subject terms of its own."""
     if not title.strip():
         return False
     if topic.primary is not None:
         if not _has(title, topic.primary):
             return False
-        return not topic.terms or any(
-            _has(title, t)
-            or _has(title, t.rstrip("s"))
-            or _has(title, t + "s")
-            or _has(title, t + "es")
-            for t in topic.terms
-        )
-    return sum(1 for t in topic.terms if _has(title, t)) >= 2
+        terms = _specific_terms(topic.terms, at_least=1)
+        return not terms or any(_mentions(title, t) for t in terms)
+    terms = _specific_terms(topic.terms, at_least=2)
+    return sum(1 for t in terms if _has(title, t)) >= 2

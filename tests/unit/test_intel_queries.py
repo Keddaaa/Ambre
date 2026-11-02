@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 from ambre.intelligence.planning import Gazetteer
-from ambre.intelligence.queries import group_search, topic_for, topic_relevant
+from ambre.intelligence.queries import Topic, group_search, topic_for, topic_relevant
 from ambre.intelligence.resolution import MarketDomain, analyze_market, load_rules
 
 NOW = datetime(2026, 11, 2, 12, 0, tzinfo=UTC)
@@ -91,3 +91,39 @@ def test_entityless_relevance_needs_at_least_two_terms() -> None:
     first, second = t.terms[0], t.terms[1]
     assert topic_relevant(f"{first} and {second} in the news", t)
     assert not topic_relevant(f"only {first} here", t)
+
+
+# ------------------------------------------------------------------ generic terms never decide
+
+
+def _topic(primary: str | None, *terms: str) -> Topic:
+    return Topic(key="t|x", domain=MarketDomain.TECHNOLOGY, primary=primary, terms=terms)
+
+
+def test_a_generic_word_alone_does_not_make_an_article_relevant() -> None:
+    """Observed on real data: 'SpaceX stock crash and close below $100' was linked to a Falcon 9
+    launch story only because the title says 'close out October'."""
+    t = _topic("SpaceX", "stock", "crash", "close", "below", "anyday")
+    launch = "Live coverage: SpaceX to close out October with Halloween eve Falcon 9 launch"
+    assert not topic_relevant(launch, t)
+    assert topic_relevant("SpaceX stock crashes after the launch failure", t)
+    assert topic_relevant("SpaceX stock slides, analysts see a crash", t)
+
+
+def test_specific_terms_still_match_next_to_generic_ones() -> None:
+    t = _topic("Falcon", "launch", "times")
+    assert topic_relevant("SpaceX Falcon 9 launch carries 24 satellites", t)
+    assert not topic_relevant("Falcon sightings doubled several times this year", t)
+
+
+def test_a_topic_made_only_of_generic_terms_keeps_its_old_rule() -> None:
+    """Dropping every term would let the entity alone decide, which is looser, not stricter."""
+    t = _topic("Starship", "reach")
+    assert topic_relevant("Starship will reach orbit on the next flight", t)
+    assert not topic_relevant("Starship completes a static fire", t)
+
+
+def test_entityless_topics_count_only_specific_terms() -> None:
+    t = _topic(None, "rocket", "close", "engine")
+    assert topic_relevant("new rocket engine passes a test", t)
+    assert not topic_relevant("rocket maker will close its plant", t)  # 'rocket' + generic 'close'
