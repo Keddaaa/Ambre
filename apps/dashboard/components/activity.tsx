@@ -21,7 +21,10 @@ function Item({ d, now }: { d: Decision; now: Date | null }) {
   return (
     <li className="border-b py-3 last:border-b-0">
       <div className="flex items-center justify-between gap-2 text-xs">
-        <span className={cn("font-mono font-medium", actionClass(d.action))}>{d.action}</span>
+        <span className={cn("font-mono font-medium", actionClass(d.action))}>
+          {d.action}
+          <span className="ml-2 font-sans font-normal text-muted-foreground">{d.actor}</span>
+        </span>
         <span className="text-muted-foreground">{formatRelativeTime(d.created_at, now)}</span>
       </div>
       <Link

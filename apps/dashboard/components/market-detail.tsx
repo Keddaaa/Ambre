@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { ProbabilityChart } from "@/components/capital-chart";
+import { OrderPanel } from "@/components/order-panel";
 import { QueryState } from "@/components/state";
 import { Stat } from "@/components/stat";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +59,12 @@ export function MarketDetail({ id }: { id: string }) {
                 <Stat label="Snapshots" value={formatNumber(snapshots.length, 0)} />
               </div>
 
+              <OrderPanel
+                marketId={market.id}
+                marketProbability={last?.probability ?? null}
+                disabledReason={market.is_resolved ? "Marché résolu : plus de mise possible." : undefined}
+              />
+
               <Card>
                 <CardHeader>
                   <CardTitle>Probabilité observée</CardTitle>
@@ -83,6 +90,7 @@ export function MarketDetail({ id }: { id: string }) {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Date</TableHead>
+                          <TableHead>Acteur</TableHead>
                           <TableHead>Action</TableHead>
                           <TableHead className="text-right">Mise</TableHead>
                           <TableHead className="text-right">Marché</TableHead>
@@ -95,6 +103,7 @@ export function MarketDetail({ id }: { id: string }) {
                         {decisions.map((d) => (
                           <TableRow key={d.decision_id}>
                             <TableCell>{formatDateTime(d.created_at)}</TableCell>
+                            <TableCell>{d.actor}</TableCell>
                             <TableCell>
                               <Badge variant="outline">{d.action}</Badge>
                             </TableCell>

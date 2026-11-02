@@ -2,6 +2,7 @@
 
 import { CapitalChart } from "@/components/capital-chart";
 import { KpiCard } from "@/components/kpi";
+import { RunCycleButton } from "@/components/run-cycle-button";
 import { QueryState } from "@/components/state";
 import { Alert, Stat, signClass } from "@/components/stat";
 import { Badge } from "@/components/ui/badge";
@@ -73,12 +74,15 @@ export default function OverviewPage() {
 
   return (
     <>
-      <div>
-        <h1 className="text-lg font-semibold">Vue d&apos;ensemble</h1>
-        <p className="text-sm text-muted-foreground">
-          Simulation papier en Mana virtuel. Mana ≠ argent réel ; aucun résultat n&apos;indique une
-          rentabilité.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-semibold">Vue d&apos;ensemble</h1>
+          <p className="text-sm text-muted-foreground">
+            Simulation papier en Mana virtuel. Mana ≠ argent réel ; aucun résultat n&apos;indique une
+            rentabilité.
+          </p>
+        </div>
+        <RunCycleButton />
       </div>
 
       {system.isError ? null : <Alerts portfolio={portfolio.data ?? null} system={system.data} />}
