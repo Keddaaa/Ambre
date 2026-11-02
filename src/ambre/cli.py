@@ -24,8 +24,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from ambre.cognitive.vault import export_markdown
 from ambre.config.settings import Settings
+from ambre.data_engine.history_fetch import fetch_histories, load_resolved_universe
 from ambre.data_engine.sync import MarketSyncService, SyncReport
 from ambre.evaluation_engine.backtest import run_backtest
+from ambre.evaluation_engine.historical import (
+    DEFAULT_HORIZONS_DAYS,
+    build_observations,
+    evaluate_historical,
+)
 from ambre.execution_engine.executor import ExecutionModeNotAvailable
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.db import make_engine, make_session_factory
@@ -393,6 +399,69 @@ def evaluate(factory: sessionmaker[Session]) -> dict[str, Any] | None:
         return asdict(evaluation_for_simulation(session, sim.id))
 
 
+def history_fetch(
+    settings: Settings,
+    factory: sessionmaker[Session],
+    client_factory: ClientFactory,
+    clock: Clock,
+    limit: int,
+    max_pages: int,
+) -> dict[str, Any]:
+    """Fetch the bet history of resolved markets that have none (read-only GETs)."""
+
+    async def _run() -> dict[str, Any]:
+        client = client_factory(settings)
+        try:
+            report = await fetch_histories(client, factory, clock, limit=limit, max_pages=max_pages)
+        finally:
+            await client.aclose()
+        return asdict(report)
+
+    return asyncio.run(_run())
+
+
+def history_universe(
+    settings: Settings,
+    client_factory: ClientFactory,
+    factory: sessionmaker[Session],
+    clock: Clock,
+    since: datetime,
+    stride_days: int,
+    per_anchor: int,
+) -> dict[str, Any]:
+    """Load resolved YES/NO markets sampled across time (read-only GETs)."""
+
+    async def _run() -> dict[str, Any]:
+        client = client_factory(settings)
+        try:
+            report = await load_resolved_universe(
+                client, factory, clock, since=since, stride_days=stride_days, per_anchor=per_anchor
+            )
+        finally:
+            await client.aclose()
+        return asdict(report)
+
+    return asyncio.run(_run())
+
+
+def history_eval(
+    factory: sessionmaker[Session],
+    settings: Settings | None = None,
+    horizons: tuple[int, ...] = DEFAULT_HORIZONS_DAYS,
+    include_folds: bool = False,
+) -> dict[str, Any]:
+    """Point-in-time evaluation on resolved markets (read-only; writes nothing)."""
+    cfg = (settings or Settings()).prediction
+    with factory() as session:
+        markets = repo.historical_markets(session)
+    observations, excluded = build_observations(markets, horizons)
+    report = asdict(evaluate_historical(observations, excluded, cfg))
+    if not include_folds:
+        for h in report["horizons"]:
+            del h["folds"]
+    return report
+
+
 def backtest(factory: sessionmaker[Session], settings: Settings | None = None) -> dict[str, Any]:
     """Walk-forward backtest of the base-rate baseline on resolved markets (read-only)."""
     cfg = (settings or Settings()).prediction
@@ -424,6 +493,16 @@ def _parser() -> argparse.ArgumentParser:
     export.add_argument("--dir", required=True, type=Path)
     sub.add_parser("evaluate", help="Brier, log loss and calibration on resolved markets")
     sub.add_parser("backtest", help="chronological walk-forward backtest, no look-ahead")
+    hist = sub.add_parser("history-fetch", help="fetch the bet history of resolved markets (GET)")
+    hist.add_argument("--limit", type=int, default=100)
+    hist.add_argument("--max-pages", type=int, default=30)
+    uni = sub.add_parser("history-universe", help="load resolved markets sampled across time (GET)")
+    uni.add_argument("--since", default="2023-01-01", help="oldest creation date, YYYY-MM-DD")
+    uni.add_argument("--stride-days", type=int, default=60)
+    uni.add_argument("--per-anchor", type=int, default=25)
+    heval = sub.add_parser("history-eval", help="point-in-time evaluation on resolved markets")
+    heval.add_argument("--horizons", default=",".join(str(h) for h in DEFAULT_HORIZONS_DAYS))
+    heval.add_argument("--folds", action="store_true", help="include every observation")
     new = sub.add_parser("new-simulation", help="archive the active simulation, start a new one")
     new.add_argument("--name", required=True)
     return parser
@@ -490,6 +569,29 @@ def main(
                 logger.error("no active simulation; run `ambre cycle` first")
                 return 1
             _emit(result)
+            return 0
+        if args.command == "history-fetch":
+            _emit(
+                history_fetch(settings, factory, client_factory, clock, args.limit, args.max_pages)
+            )
+            return 0
+        if args.command == "history-universe":
+            since = datetime.fromisoformat(args.since).replace(tzinfo=UTC)
+            _emit(
+                history_universe(
+                    settings,
+                    client_factory,
+                    factory,
+                    clock,
+                    since,
+                    args.stride_days,
+                    args.per_anchor,
+                )
+            )
+            return 0
+        if args.command == "history-eval":
+            horizons = tuple(int(x) for x in args.horizons.split(",") if x.strip())
+            _emit(history_eval(factory, settings, horizons, args.folds))
             return 0
         if args.command == "backtest":
             _emit(backtest(factory, settings))

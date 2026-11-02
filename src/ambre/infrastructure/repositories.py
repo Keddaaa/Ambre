@@ -4,17 +4,21 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.orm import Session
 
 from ambre.domain.models import BinaryMarket, MarketSnapshot, SimulationStatus
 from ambre.evaluation_engine.backtest import BacktestMarket
+from ambre.evaluation_engine.historical import HistoricalMarket
+from ambre.evaluation_engine.history import PriceHistory, PricePoint
 from ambre.infrastructure.orm import (
     ControlStateRow,
     DecisionRow,
     IgnoredMarketRow,
     MarketRow,
     PortfolioSnapshotRow,
+    PriceHistoryStateRow,
+    PricePointRow,
     SimulationRow,
     SnapshotRow,
     SyncStateRow,
@@ -392,3 +396,84 @@ def backtest_markets(session: Session) -> list[BacktestMarket]:
         )
         for market_id, (decision_at, probability) in sorted(first.items())
     ]
+
+
+def markets_needing_history(session: Session, limit: int) -> list[str]:
+    """Resolved YES/NO markets with a known resolution date and no stored history yet, the most
+    recently resolved first. A market whose fetch was incomplete is not asked again."""
+    stmt = (
+        select(MarketRow.id)
+        .outerjoin(PriceHistoryStateRow, PriceHistoryStateRow.market_id == MarketRow.id)
+        .where(
+            MarketRow.resolution.in_(("YES", "NO")),
+            MarketRow.resolution_at.is_not(None),
+            PriceHistoryStateRow.market_id.is_(None),
+        )
+        .order_by(MarketRow.resolution_at.desc(), MarketRow.id)
+        .limit(limit)
+    )
+    return list(session.scalars(stmt))
+
+
+def save_price_history(
+    session: Session, history: PriceHistory, bet_count: int, now: datetime
+) -> None:
+    """Store a fetched history. Re-saving a market replaces its points: the call is idempotent."""
+    session.execute(delete(PricePointRow).where(PricePointRow.market_id == history.market_id))
+    existing = session.get(PriceHistoryStateRow, history.market_id)
+    if existing is not None:
+        session.delete(existing)
+    session.flush()
+    session.add(
+        PriceHistoryStateRow(
+            market_id=history.market_id,
+            complete=history.complete,
+            bet_count=bet_count,
+            dropped=history.dropped,
+            initial_probability=history.initial_probability,
+            fetched_at=now,
+        )
+    )
+    session.add_all(
+        PricePointRow(
+            market_id=history.market_id, bet_id=p.bet_id, at=p.at, probability=p.probability
+        )
+        for p in history.points
+    )
+    session.flush()
+
+
+def historical_markets(session: Session) -> list[HistoricalMarket]:
+    """Resolved YES/NO markets with a stored history, ready for the point-in-time evaluation."""
+    rows = session.execute(
+        select(MarketRow, PriceHistoryStateRow)
+        .join(PriceHistoryStateRow, PriceHistoryStateRow.market_id == MarketRow.id)
+        .where(MarketRow.resolution.in_(("YES", "NO")), MarketRow.resolution_at.is_not(None))
+        .order_by(MarketRow.resolution_at, MarketRow.id)
+    ).all()
+    points: dict[str, list[PricePoint]] = {}
+    for p in session.scalars(
+        select(PricePointRow).order_by(PricePointRow.market_id, PricePointRow.at)
+    ):
+        points.setdefault(p.market_id, []).append(PricePoint(p.at, p.probability, p.bet_id))
+    out: list[HistoricalMarket] = []
+    for market, state in rows:
+        assert market.resolution_at is not None
+        out.append(
+            HistoricalMarket(
+                market_id=market.id,
+                question=market.question,
+                created_at=market.created_at,
+                close_at=market.close_at,
+                resolution_at=market.resolution_at,
+                outcome=market.resolution == "YES",
+                history=PriceHistory(
+                    market_id=market.id,
+                    initial_probability=state.initial_probability,
+                    points=tuple(points.get(market.id, [])),
+                    complete=state.complete,
+                    dropped=state.dropped,
+                ),
+            )
+        )
+    return out

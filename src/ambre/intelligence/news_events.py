@@ -10,56 +10,16 @@ were published, or first available, within ``window_hours`` of each other. Diffe
 are never merged because they share an entity: the overlap must be about the title as a whole.
 """
 
-import re
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
+from ambre.domain.similarity import content_tokens, jaccard
 from ambre.intelligence.news_parsing import canonical_url
 
 DEFAULT_THRESHOLD = 0.6
 DEFAULT_WINDOW_HOURS = 72.0
-_WORD = re.compile(r"[a-z0-9]+")
-_STOP = frozenset(
-    {
-        "a",
-        "an",
-        "the",
-        "of",
-        "to",
-        "in",
-        "on",
-        "at",
-        "for",
-        "by",
-        "with",
-        "and",
-        "or",
-        "is",
-        "are",
-        "was",
-        "were",
-        "be",
-        "been",
-        "will",
-        "would",
-        "after",
-        "before",
-        "over",
-        "as",
-        "from",
-        "into",
-        "its",
-        "it",
-        "this",
-        "that",
-        "new",
-        "says",
-        "say",
-        "said",
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -82,13 +42,7 @@ class EventCluster:
 
 
 def title_tokens(title: str) -> frozenset[str]:
-    return frozenset(w for w in _WORD.findall(title.lower()) if w not in _STOP and len(w) > 1)
-
-
-def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
+    return content_tokens(title)
 
 
 class _Union:
@@ -131,7 +85,7 @@ def cluster_items(
         candidates = {j for t in toks for j in index[t]}
         for j in candidates:
             gap = abs((ordered[idx].at - ordered[j].at).total_seconds()) / 3600.0
-            if gap <= window_hours and _jaccard(toks, tokens[j]) >= threshold:
+            if gap <= window_hours and jaccard(toks, tokens[j]) >= threshold:
                 union.join(j, idx)
         for t in toks:
             index[t].append(idx)

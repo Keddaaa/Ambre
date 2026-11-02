@@ -148,3 +148,13 @@
 - **Raisons :** reconstruire après coup risque une fuite (une observation arrivée après la décision) ; le prix à l'instant est nécessaire pour comparer au marché ; l'empreinte évite une ligne toutes les dix minutes.
 - **Compromis :** les marchés sans caractéristiques ne sont pas journalisés (le groupe témoin vient du backtest) ; seuls trois domaines produisent des caractéristiques aujourd'hui (météo, séismes, presse) ; l'empreinte est exacte, pas tolérante aux variations négligeables.
 - **Conséquences :** `intelligence.feature_journal` est pur ; `store.append_feature_journal` écrit. Aucune lecture sur le chemin de pari, aucun lien avec décisions, positions ni ledger (testé). Ce journal ne produit aucune probabilité. Étape suivante : un moteur d'expériences qui joint le journal aux issues résolues et compare le Brier avec et sans caractéristiques, sur des marchés non vus.
+
+
+## ADR-018 — Évaluation historique sans fuite, avant tout modèle contextuel
+
+- **Problème :** attendre que les marchés ouverts se résolvent donne des échantillons minuscules (54 marchés, tous récents) dont la conclusion (« la baseline est moins bonne que le prix ») ne se généralise pas.
+- **Options :** attendre ; scorer l'historique avec les réponses des sources d'aujourd'hui ; reconstruire le prix passé depuis l'historique des paris et n'évaluer que ce qui était réellement connu.
+- **Choix :** reconstruire, pour des marchés résolus échantillonnés dans le temps, le prix à un âge donné depuis `GET /v0/bets` (`probAfter` du dernier pari antérieur), ajuster les modèles dans l'ordre chronologique sur les seuls marchés résolus avant l'instant de décision, comparer le prix, la baseline et un prix recalibré sur les mêmes marchés, et rapporter deux intervalles (naïf, par grappes de questions presque identiques). Les modèles contextuels restent `NOT_EVALUATED` : on ne fabrique aucune observation historique.
+- **Raisons :** le prix passé est un fait reconstructible sans estimation ; une source obtenue aujourd'hui n'a pas été connue alors ; des marchés presque identiques ne sont pas des preuves indépendantes.
+- **Compromis :** l'échantillon n'est pas aléatoire ; l'âge comme point de décision écarte les marchés rapides des longs horizons ; l'approximation normale est fragile sous ~30 grappes ; le coût est d'environ une requête GET par marché.
+- **Conséquences :** `ambre history-universe`, `history-fetch`, `history-eval` (lecture seule côté Manifold), migration `0009`, primitive neutre `domain/similarity.py` (un moteur quantitatif ne dépend pas d'`intelligence`, règle testée). Résultat du 2026-11-02 : aucun modèle ne se distingue du prix (tous verdicts « inconclusive ») ; le résultat du backtest à 54 marchés est infirmé comme tendance générale.
