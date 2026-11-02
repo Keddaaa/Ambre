@@ -144,3 +144,18 @@ def test_map_rejects_without_id_has_none_market_id() -> None:
     result = map_market(raw, OBSERVED, SOURCE)
     assert isinstance(result, Rejected)
     assert result.market_id is None
+
+
+def test_map_out_of_range_close_time_means_no_close_date() -> None:
+    raw = deepcopy(_synthetic("synth_no_optional"))
+    raw["closeTime"] = 253402329540000.0  # year 9999: Manifold's "never closes" sentinel
+    mapped = map_market(raw, OBSERVED, SOURCE)
+    assert isinstance(mapped, MappedMarket)
+    assert mapped.market.close_at is None
+
+
+@pytest.mark.parametrize("field", ["createdTime", "resolutionTime"])
+def test_map_out_of_range_other_timestamps_still_rejected(field: str) -> None:
+    raw = deepcopy(_synthetic("synth_no_optional"))
+    raw[field] = 253402329540000.0
+    assert isinstance(map_market(raw, OBSERVED, SOURCE), Rejected)

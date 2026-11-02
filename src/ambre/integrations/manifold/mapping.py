@@ -60,6 +60,17 @@ def _optional_dt(raw: dict[str, Any], key: str) -> datetime | None:
     return None if value is None else _ms_to_dt(value)
 
 
+def _optional_close_dt(raw: dict[str, Any]) -> datetime | None:
+    """``closeTime`` beyond the representable range (year 9999) is Manifold's "never closes"."""
+    value = _optional_number(raw, "closeTime")
+    if value is None:
+        return None
+    try:
+        return _ms_to_dt(value)
+    except _Invalid:
+        return None
+
+
 def _optional_int(raw: dict[str, Any], key: str) -> int | None:
     value = _optional_number(raw, key)
     return None if value is None else int(value)
@@ -108,7 +119,7 @@ def _build(raw: dict[str, Any], observed_at: datetime, source_id: str) -> Mapped
         creator_username=_required_str(raw, "creatorUsername"),
         mechanism=_required_str(raw, "mechanism"),
         created_at=created_at,
-        close_at=_optional_dt(raw, "closeTime"),
+        close_at=_optional_close_dt(raw),
         is_resolved=raw.get("isResolved") is True,
         resolution=_optional_str(raw, "resolution"),
         resolution_probability=_optional_number(raw, "resolutionProbability"),
