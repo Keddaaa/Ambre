@@ -103,7 +103,7 @@ Métriques : Brier, log loss, calibration (`evaluation_engine` existe déjà), r
 | Event Intelligence | **partiel** : déduplication par fournisseur, identifiant et révision ; liens candidats. Pas de regroupement d'articles, de chronologie ni de détection de contradictions | `store.py`, `matching.py` |
 | Information Planner | fait pour les marchés sur les séismes seulement | `planning.py`, `configs/gazetteer.yaml` |
 | Smart Source Router | fait, déterministe et expliqué (prior de pertinence) | `routing.py` |
-| Adaptive Scheduler | **non fait** : `ambre research` se lance à la main | — |
+| Adaptive Scheduler | fait pour la tâche `research` : persistant, bail, créneau unique, arrêt d'urgence, reprise, journal ; déclenchement événementiel = API sans émetteur (ADR-014) | `scheduler.py`, `intel_jobs`, `intel_job_runs` |
 | Information Value Estimator | v1 : classement a priori, `expected_information_gain = None` | `value.py` |
 | Knowledge Memory | **partiel** : requêtes, observations, liens, usage. Pas d'affirmations, de prévisions ni de résultats | `orm.py` |
 | Source Learning | **non fait** : `usefulness` reste `None` | — |

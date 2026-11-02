@@ -65,6 +65,10 @@ class IntelligenceConfig(BaseModel):
     # Stop rule: a search whose ranking score is below this is not worth its quota.
     min_value_score: float = Field(default=0.02, ge=0)
     failure_backoff_base_seconds: float = Field(default=60.0, gt=0)
+    # Scheduled research: one pass per interval inside `ambre worker`.
+    schedule_research: bool = True
+    research_interval_seconds: int = Field(default=600, ge=60)
+    job_lease_seconds: int = Field(default=900, ge=60)
     failure_backoff_cap_seconds: float = Field(default=3600.0, gt=0)
 
 

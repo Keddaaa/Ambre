@@ -4,6 +4,8 @@
 
 ### Ajouté
 
+- Planificateur de recherche persistant (`intel_jobs`, `intel_job_runs`, migration `0005`) branché dans `ambre worker` : intervalle configurable, bail, créneau unique, arrêt d'urgence sans consommer l'occasion, reprise après plantage, recul après échec, journal. `ambre scheduler-status`. ADR-014.
+
 - Cognitive Vault v0.1 (`ambre.cognitive`, ADR-012) : notes versionnées et reliées, recherche, export Markdown (`ambre vault-export`), registre de règles avec cycle de vie, versions et audit, contraintes immuables, détection de conflits. Migration `0004`. Tests unitaires, d'intégration et de propriété (Hypothesis). Aucune règle n'est encore consommée par un moteur.
 - Resolution Intelligence Engine, planificateur générique à neuf domaines, connecteur Open-Meteo (prévisions journalières), Context Feature Bridge et garde d'estimation `INSUFFICIENT_MODEL`. `ambre research` traite séismes et météo. Voir `docs/RESOLUTION_INTELLIGENCE.md` et ADR-013.
 

@@ -101,3 +101,37 @@ class IntelProviderStateRow(Base):
     last_ok_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(String, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class IntelJobRow(Base):
+    """A scheduled job. ``next_run_at`` only moves forward when the job really ran (or failed):
+    a run skipped because of an emergency stop, a lease or stale data leaves it due."""
+
+    __tablename__ = "intel_jobs"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    interval_seconds: Mapped[int] = mapped_column(Integer)
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    next_run_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    last_run_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer)
+    lease_until: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class IntelJobRunRow(Base):
+    """Journal of every scheduling decision. ``slot`` is set only for a run that executed, and
+    (job, slot) is unique: two runners can never both execute the same time slot."""
+
+    __tablename__ = "intel_job_runs"
+    __table_args__ = (UniqueConstraint("job_name", "slot"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_name: Mapped[str] = mapped_column(String, ForeignKey("intel_jobs.name"), index=True)
+    slot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON)

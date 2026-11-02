@@ -32,6 +32,8 @@ from ambre.integrations.manifold.client import ManifoldClient
 from ambre.intelligence.connectors import CONNECTORS, build_providers
 from ambre.intelligence.planning import load_gazetteer
 from ambre.intelligence.registry import load_registry
+from ambre.intelligence.scheduler import JobSpec, tick
+from ambre.intelligence.scheduler import status as scheduler_status
 from ambre.intelligence.service import research_pass
 from ambre.pipeline import CycleReport, evaluation_for_simulation, run_cycle
 from ambre.portfolio.service import create_simulation
@@ -136,9 +138,11 @@ def worker(
     sleep: Sleep,
     interval: float,
     max_pages: int,
+    http_factory: HttpFactory | None = None,
 ) -> int:
-    """Loop sync then cycle. A failed sync is logged and the cycle runs anyway (survival
-    turns stale data into OBSERVING). Ctrl-C stops the loop with exit code 0."""
+    """Loop sync, research tick (when scheduled) then cycle. A failed sync or research tick is
+    logged and the cycle runs anyway (survival turns stale data into OBSERVING). Ctrl-C stops the
+    loop with exit code 0."""
     try:
         while True:
             sync_report: SyncReport | None = None
@@ -148,6 +152,12 @@ def worker(
                     logger.warning("sync incomplete: %s", sync_report.error)
             except Exception:
                 logger.exception("sync failed; running the cycle anyway")
+            research: list[dict[str, Any]] | None = None
+            if settings.intelligence.schedule_research:
+                try:
+                    research = research_tick(settings, factory, clock, http_factory)
+                except Exception:
+                    logger.exception("research tick failed; the decision cycle goes on")
             cycle: dict[str, Any] | None = None
             try:
                 cycle = _cycle_dict(cycle_once(settings, factory, clock))
@@ -155,31 +165,36 @@ def worker(
                 raise
             except Exception:
                 logger.exception("cycle failed (rolled back); retrying next interval")
-            _emit({"sync": asdict(sync_report) if sync_report else None, "cycle": cycle})
+            _emit(
+                {
+                    "sync": asdict(sync_report) if sync_report else None,
+                    "research": research,
+                    "cycle": cycle,
+                }
+            )
             sleep(interval)
     except KeyboardInterrupt:
         logger.info("worker stopped by Ctrl-C")
         return 0
 
 
-def research_once(
+def _research_in_session(
     settings: Settings,
-    factory: sessionmaker[Session],
+    session: Session,
+    now: datetime,
     clock: Clock,
-    http_factory: HttpFactory,
+    http_factory: HttpFactory | None,
 ) -> dict[str, Any]:
-    """One research pass in one transaction (commit on success, roll back on any exception).
-
-    Read-only toward every provider, writes only the intelligence tables, never a decision.
-    No HTTP client is created when no enabled provider has a connector.
-    """
+    """One research pass inside ``session`` (the caller commits). Read-only toward every
+    provider, writes only the intelligence tables, never a decision. No HTTP client is created
+    when no enabled provider has a connector."""
     registry = load_registry(settings.providers_path)
     gazetteer = load_gazetteer(settings.gazetteer_path)
-    now = clock()
+    factory_ = http_factory or default_http_factory
 
-    async def _run(session: Session) -> dict[str, Any]:
+    async def _run() -> dict[str, Any]:
         needs_http = any(c.id in CONNECTORS for c in registry.enabled())
-        http = http_factory() if needs_http else None
+        http = factory_() if needs_http else None
         try:
             providers = build_providers(registry, http, clock) if http is not None else {}
             report = await research_pass(
@@ -192,14 +207,66 @@ def research_once(
         out["markets_without_information"] = sorted(set(out["markets_without_information"]))
         return out
 
+    return asyncio.run(_run())
+
+
+def research_once(
+    settings: Settings,
+    factory: sessionmaker[Session],
+    clock: Clock,
+    http_factory: HttpFactory | None = None,
+) -> dict[str, Any]:
+    """One research pass in one transaction (commit on success, roll back on any exception)."""
     with factory() as session:
         try:
-            result = asyncio.run(_run(session))
+            result = _research_in_session(settings, session, clock(), clock, http_factory)
             session.commit()
         except BaseException:
             session.rollback()
             raise
     return result
+
+
+def research_job(settings: Settings, clock: Clock, http_factory: HttpFactory | None) -> JobSpec:
+    """The scheduled research job: one pass per interval, summarised for the run journal."""
+
+    def run(session: Session, now: datetime) -> dict[str, Any]:
+        full = _research_in_session(settings, session, now, clock, http_factory)
+        return {
+            "calls": full["calls"],
+            "new_observations": full["new_observations"],
+            "new_links": full["new_links"],
+            "requests": [
+                {"status": r["status"], "provider": r["provider"], "markets": len(r["markets"])}
+                for r in full["requests"]
+            ],
+            "plans": full["plans"],
+            "markets_without_information": len(full["markets_without_information"]),
+        }
+
+    return JobSpec("research", settings.intelligence.research_interval_seconds, run)
+
+
+def research_tick(
+    settings: Settings,
+    factory: sessionmaker[Session],
+    clock: Clock,
+    http_factory: HttpFactory | None = None,
+) -> list[dict[str, Any]]:
+    """Run the research job if it is due (persistent schedule, emergency stop, lease, journal)."""
+    spec = research_job(settings, clock, http_factory)
+    results = tick(
+        factory,
+        clock(),
+        {spec.name: spec},
+        lease_seconds=settings.intelligence.job_lease_seconds,
+    )
+    return [{"job": r.job, "status": r.status, "detail": r.detail} for r in results]
+
+
+def scheduler_snapshot(factory: sessionmaker[Session]) -> dict[str, Any]:
+    with factory() as session:
+        return scheduler_status(session)
 
 
 def vault_export(factory: sessionmaker[Session], directory: Path) -> dict[str, Any]:
@@ -240,6 +307,7 @@ def _parser() -> argparse.ArgumentParser:
     work.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
     work.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
     sub.add_parser("research", help="one information-seeking pass (read-only, never places a bet)")
+    sub.add_parser("scheduler-status", help="scheduled jobs and their recent runs")
     export = sub.add_parser("vault-export", help="export the Cognitive Vault as Markdown files")
     export.add_argument("--dir", required=True, type=Path)
     sub.add_parser("evaluate", help="Brier, log loss and calibration on resolved markets")
@@ -254,7 +322,7 @@ def main(
     client_factory: ClientFactory = default_client_factory,
     clock: Clock = utc_now,
     sleep: Sleep = time.sleep,
-    http_factory: HttpFactory = default_http_factory,
+    http_factory: HttpFactory | None = None,
 ) -> int:
     args = _parser().parse_args(argv)
     logging.basicConfig(
@@ -279,10 +347,20 @@ def main(
             return 0
         if args.command == "worker":
             return worker(
-                settings, factory, client_factory, clock, sleep, args.interval, args.max_pages
+                settings,
+                factory,
+                client_factory,
+                clock,
+                sleep,
+                args.interval,
+                args.max_pages,
+                http_factory,
             )
         if args.command == "research":
             _emit(research_once(settings, factory, clock, http_factory))
+            return 0
+        if args.command == "scheduler-status":
+            _emit(scheduler_snapshot(factory))
             return 0
         if args.command == "vault-export":
             _emit(vault_export(factory, args.dir))
