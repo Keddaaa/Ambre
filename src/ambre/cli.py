@@ -10,7 +10,10 @@ import argparse
 import asyncio
 import json
 import logging
+import os
+import socket
 import sys
+import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict
@@ -36,8 +39,10 @@ from ambre.evaluation_engine.historical import (
 )
 from ambre.execution_engine.executor import ExecutionModeNotAvailable
 from ambre.infrastructure import repositories as repo
+from ambre.infrastructure import worker_lease
 from ambre.infrastructure.db import make_engine, make_session_factory
 from ambre.infrastructure.orm import LedgerRow
+from ambre.infrastructure.worker_lease import lease_ttl_seconds
 from ambre.integrations.manifold.client import ManifoldClient
 from ambre.intelligence.connectors import CONNECTORS, build_providers
 from ambre.intelligence.coverage import coverage_report
@@ -55,6 +60,7 @@ logger = logging.getLogger("ambre.cli")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INTERVAL_SECONDS = 300
+LEASE_POLL_SECONDS = 60.0
 DEFAULT_MAX_PAGES = 5
 
 ClientFactory = Callable[[Settings], ManifoldClient]
@@ -152,10 +158,74 @@ def worker(
     interval: float,
     max_pages: int,
     http_factory: HttpFactory | None = None,
+    lease_wait_seconds: float | None = None,
 ) -> int:
     """Loop sync, research tick (when scheduled) then cycle. A failed sync or research tick is
-    logged and the cycle runs anyway (survival turns stale data into OBSERVING). Ctrl-C stops the
-    loop with exit code 0."""
+    logged and the cycle runs anyway (survival turns stale data into OBSERVING). Ctrl-C or SIGTERM
+    stops the loop with exit code 0.
+
+    The loop runs only while this process holds the database's worker lease: a second worker on
+    the same database waits for it (``lease_wait_seconds`` None = forever) or exits with code 3.
+    Every run and every interruption is journaled (``worker_lease``)."""
+    holder = f"{socket.gethostname()}:{os.getpid()}"
+    ttl = lease_ttl_seconds(interval)
+    waited = 0.0
+    while not worker_lease.acquire(factory, holder, clock(), ttl):
+        if lease_wait_seconds is not None and waited >= lease_wait_seconds:
+            logger.error("another worker holds this database's lease: not starting")
+            return 3
+        step = LEASE_POLL_SECONDS
+        logger.warning("another worker holds the lease; checking again in %.0fs", step)
+        sleep(step)
+        waited += step
+    started = worker_lease.start_run(factory, holder, clock())
+    if started.interrupted:
+        logger.warning(
+            "%d earlier run(s) ended without a clean stop; downtime before this run: %.0fs",
+            started.interrupted,
+            started.gap_before_seconds or 0.0,
+        )
+    previous_handler = (
+        worker_lease.install_sigterm_handler()
+        if threading.current_thread() is threading.main_thread()
+        else None
+    )
+    reason = worker_lease.CLEAN_STOP
+    try:
+        return _worker_loop(
+            settings, factory, client_factory, clock, sleep, interval, max_pages, http_factory,
+            holder, ttl, started.run_id,
+        )  # fmt: skip
+    except KeyboardInterrupt:
+        logger.info("worker stopped (signal or Ctrl-C)")
+        return 0
+    except BaseException as exc:
+        reason = f"crashed: {type(exc).__name__}: {exc}"
+        raise
+    finally:
+        worker_lease.stop_run(factory, started.run_id, clock(), reason)
+        worker_lease.release(factory, holder)
+        if threading.current_thread() is threading.main_thread():
+            worker_lease.restore_sigterm_handler(previous_handler)
+
+
+class LeaseLost(Exception):
+    """Another worker owns the lease now: this one must stop at once."""
+
+
+def _worker_loop(
+    settings: Settings,
+    factory: sessionmaker[Session],
+    client_factory: ClientFactory,
+    clock: Clock,
+    sleep: Sleep,
+    interval: float,
+    max_pages: int,
+    http_factory: HttpFactory | None,
+    holder: str,
+    ttl: float,
+    run_id: int,
+) -> int:
     try:
         while True:
             sync_report: SyncReport | None = None
@@ -185,10 +255,27 @@ def worker(
                     "cycle": cycle,
                 }
             )
+            if not worker_lease.renew(factory, holder, clock(), ttl):
+                raise LeaseLost("the lease now belongs to another worker")
+            worker_lease.heartbeat_run(factory, run_id, clock())
             sleep(interval)
-    except KeyboardInterrupt:
-        logger.info("worker stopped by Ctrl-C")
-        return 0
+    except LeaseLost as exc:
+        logger.error("%s: stopping", exc)
+        worker_lease.stop_run(factory, run_id, clock(), f"lease lost: {exc}")
+        return 4
+
+
+def worker_status(factory: sessionmaker[Session], clock: Clock) -> dict[str, Any]:
+    with factory() as session:
+        return worker_lease.status(session, clock())
+
+
+def worker_healthy(
+    factory: sessionmaker[Session], clock: Clock, max_age: float, mine: bool = False
+) -> bool:
+    prefix = f"{socket.gethostname()}:" if mine else None
+    with factory() as session:
+        return worker_lease.healthy(session, clock(), max_age, prefix)
 
 
 def _research_in_session(
@@ -523,6 +610,18 @@ def _parser() -> argparse.ArgumentParser:
     work = sub.add_parser("worker", help="loop sync + cycle until Ctrl-C")
     work.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
     work.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
+    work.add_argument(
+        "--lease-wait-seconds",
+        type=float,
+        default=None,
+        help="give up after waiting this long for another worker's lease (default: wait)",
+    )
+    ws = sub.add_parser("worker-status", help="worker lease, runs and interruptions")
+    ws.add_argument("--check", action="store_true", help="exit 1 unless a worker is alive")
+    ws.add_argument(
+        "--mine", action="store_true", help="with --check: the lease must belong to this host"
+    )
+    ws.add_argument("--max-age", type=float, default=1500.0, help="heartbeat age limit (s)")
     sub.add_parser("research", help="one information-seeking pass (read-only, never places a bet)")
     sub.add_parser("coverage", help="information coverage of every unresolved market")
     sub.add_parser("scheduler-status", help="scheduled jobs and their recent runs")
@@ -588,7 +687,13 @@ def main(
                 args.interval,
                 args.max_pages,
                 http_factory,
+                args.lease_wait_seconds,
             )
+        if args.command == "worker-status":
+            if args.check:
+                return 0 if worker_healthy(factory, clock, args.max_age, args.mine) else 1
+            _emit(worker_status(factory, clock))
+            return 0
         if args.command == "research":
             _emit(research_once(settings, factory, clock, http_factory))
             return 0

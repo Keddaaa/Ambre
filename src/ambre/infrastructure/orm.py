@@ -220,3 +220,31 @@ class PricePointRow(Base):
     bet_id: Mapped[str] = mapped_column(String, primary_key=True)
     at: Mapped[datetime] = mapped_column(UTCDateTime)
     probability: Mapped[float] = mapped_column(Float)
+
+
+class WorkerLeaseRow(Base):
+    """The single lease a worker must hold to run on this database (see ``worker_lease``)."""
+
+    __tablename__ = "worker_lease"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    holder: Mapped[str] = mapped_column(String)
+    acquired_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    heartbeat_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class WorkerRunRow(Base):
+    """One worker run: start, last heartbeat, how it stopped, and the downtime before it."""
+
+    __tablename__ = "worker_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, index=True)
+    holder: Mapped[str] = mapped_column(String)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    last_heartbeat_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    stopped_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    stop_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    iterations: Mapped[int] = mapped_column(Integer)
+    gap_before_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
