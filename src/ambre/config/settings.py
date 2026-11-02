@@ -10,6 +10,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from ambre.domain.models import ExecutionMode
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "default.yaml"
+DEFAULT_PROVIDERS_PATH = DEFAULT_CONFIG_PATH.parent / "providers.yaml"
+DEFAULT_GAZETTEER_PATH = DEFAULT_CONFIG_PATH.parent / "gazetteer.yaml"
 
 
 class RiskConfig(BaseModel):
@@ -48,6 +50,24 @@ class PredictionConfig(BaseModel):
     uncertainty_floor: float = Field(default=0.02, ge=0, le=1)
 
 
+class IntelligenceConfig(BaseModel):
+    """Collection policy of the Global Intelligence Network (docs/INTELLIGENCE_ARCHITECTURE.md)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # Lowest magnitude requested when a market names no threshold: a collection floor to bound
+    # the response size, not a market criterion.
+    earthquake_floor_magnitude: float = Field(default=4.5, ge=1, le=10)
+    lookback_days: int = Field(default=7, gt=0)
+    fetch_limit: int = Field(default=500, gt=0, le=20000)
+    # Planning is a cheap text rule: it scans far more markets than a decision cycle evaluates.
+    max_markets_scanned: int = Field(default=5000, gt=0)
+    # Stop rule: a search whose ranking score is below this is not worth its quota.
+    min_value_score: float = Field(default=0.02, ge=0)
+    failure_backoff_base_seconds: float = Field(default=60.0, gt=0)
+    failure_backoff_cap_seconds: float = Field(default=3600.0, gt=0)
+
+
 def _load_yaml_block(name: str) -> dict[str, Any]:
     path = Path(os.environ.get("AMBRE_CONFIG") or DEFAULT_CONFIG_PATH)
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -68,6 +88,8 @@ class Settings(BaseSettings):
     initial_capital: float = Field(default=1000.0, gt=0)
     cors_origins: list[str] = ["http://localhost:3000"]
     max_markets_per_cycle: int = Field(default=200, gt=0)
+    providers_path: Path = DEFAULT_PROVIDERS_PATH
+    gazetteer_path: Path = DEFAULT_GAZETTEER_PATH
 
     risk: RiskConfig = Field(default_factory=lambda: RiskConfig(**_load_yaml_block("risk")))
     survival: SurvivalConfig = Field(
@@ -78,6 +100,9 @@ class Settings(BaseSettings):
     )
     prediction: PredictionConfig = Field(
         default_factory=lambda: PredictionConfig(**_load_yaml_block("prediction"))
+    )
+    intelligence: IntelligenceConfig = Field(
+        default_factory=lambda: IntelligenceConfig(**_load_yaml_block("intelligence"))
     )
 
 

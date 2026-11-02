@@ -1,0 +1,11 @@
+# Hand-written regions used to read market questions and to filter observations.
+# `bbox` = [min_lat, max_lat, min_lon, max_lon]. These boxes are modelling choices, not official
+# boundaries: a market's own resolution criteria always prevail (and are not read yet, ADR-010).
+# Add a region only when a market needs it.
+regions:
+  new_zealand:
+    aliases: ["new zealand"]
+    bbox: [-48.0, -33.0, 165.0, 179.0]
+  san_francisco:
+    aliases: ["san francisco", "bay area"]
+    bbox: [37.0, 38.5, -123.5, -121.5]

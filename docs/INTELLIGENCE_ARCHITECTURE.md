@@ -1,6 +1,6 @@
 # Global Intelligence Network (GIN) — architecture
 
-État : **conception (phase A)**. Aucun module `intelligence` n'existe encore ; chaque sous-module est créé avec son premier code et ses tests, jamais comme dossier vide (`AGENTS.md`). Décision : ADR-010. Fournisseurs vérifiés : `API_CATALOG.md`. Limites : `API_LIMITS.md`. Licences : `DATA_LICENSES.md`.
+État : **phase A faite ; phases B et C en partie** (premier pipeline de bout en bout avec USGS, ADR-011). Chaque sous-module est créé avec son premier code et ses tests, jamais comme dossier vide (`AGENTS.md`). Décisions : ADR-010, ADR-011. Fournisseurs vérifiés : `API_CATALOG.md`. Limites : `API_LIMITS.md`. Licences : `DATA_LICENSES.md`.
 
 ## Objectif et garde-fous
 
@@ -93,14 +93,41 @@ Métriques : Brier, log loss, calibration (`evaluation_engine` existe déjà), r
 - Open-Meteo est réservé à un usage non commercial.
 - Plusieurs fournisseurs du catalogue du propriétaire restent `UNVERIFIED`.
 
+## Ce qui existe (2026-11-02)
+
+| Composant demandé | État | Où |
+|---|---|---|
+| API Registry | fait : activation conditionnée au statut vérifié, sans clé, avec budget ; santé et pause en base | `registry.py`, `configs/providers.yaml`, `intel_provider_state` |
+| Intelligent Budget Manager | fait : quotas glissants stricts, réserve prioritaire, intervalle minimal, pause, recul exponentiel. **Pas encore** de budget dynamique | `budget.py`, `intel_usage` |
+| Typed Information Envelope | fait pour un type de payload (`earthquake`) ; quatre horloges ; provenance conservée | `models.py`, `normalization.py` |
+| Event Intelligence | **partiel** : déduplication par fournisseur, identifiant et révision ; liens candidats. Pas de regroupement d'articles, de chronologie ni de détection de contradictions | `store.py`, `matching.py` |
+| Information Planner | fait pour les marchés sur les séismes seulement | `planning.py`, `configs/gazetteer.yaml` |
+| Smart Source Router | fait, déterministe et expliqué (prior de pertinence) | `routing.py` |
+| Adaptive Scheduler | **non fait** : `ambre research` se lance à la main | — |
+| Information Value Estimator | v1 : classement a priori, `expected_information_gain = None` | `value.py` |
+| Knowledge Memory | **partiel** : requêtes, observations, liens, usage. Pas d'affirmations, de prévisions ni de résultats | `orm.py` |
+| Source Learning | **non fait** : `usefulness` reste `None` | — |
+
+Connecteur : USGS seulement (`providers/usgs.py`). Les autres fournisseurs de la liste blanche sont dans le registre, désactivés.
+
+Mesure réelle du 2026-11-02 (PostgreSQL, un appel USGS) : 2 marchés sur les séismes détectés parmi 1 143 marchés ouverts, 1 requête (200), 138 séismes M ≥ 4,5 des 7 derniers jours stockés (magnitude max 6,4), 0 lien (aucun séisme ≥ 6,7 ni dans les zones Nouvelle-Zélande ou San Francisco : vérifié par une requête SQL indépendante). Aucune décision ni position créée.
+
+## Commandes
+
+```bash
+uv run ambre research     # une passe : planifie, route, interroge, stocke, relie, journalise
+```
+
+Chaque ligne de `intel_requests` répond à : pourquoi chercher (`why`), pourquoi cette source (`routing`), pourquoi pas les autres (`routing.candidates[].reasons`), combien ça coûte (`cost`), quels marchés (`markets`), fiabilité et fraîcheur (statut de vérification et `available_at` de chaque observation), quand s'arrêter (`stop`). L'utilité rétrospective (`usefulness`) reste vide tant que la phase F n'existe pas.
+
 ## Phases
 
 | Phase | Contenu | État |
 |---|---|---|
 | A | audit du dépôt, API vérifiées, 4 documents, ADR-010 | ce document |
-| B | modèles, registre, budget, journalisation, stockage, tests | à faire |
-| C | connecteurs, un par un, avec fixtures `synthetic_` et un test de santé réel hors suite de tests : Open-Meteo, USGS, EONET, Hacker News, GitHub, GDELT, Bluesky (comptes publics) | à faire |
-| D | déduplication, événements, vérification, rapprochement avec les marchés | à faire |
-| E | recherche active adaptative (planner, router, valeur, mémoire, budget) | à faire |
+| B | modèles, registre, budget, journalisation, stockage, tests | fait (budget dynamique restant) |
+| C | connecteurs, un par un, avec fixtures `synthetic_` et un test de santé réel hors suite de tests | USGS fait ; Open-Meteo, EONET, Hacker News, GitHub, GDELT, Bluesky à faire |
+| D | déduplication, événements, vérification, rapprochement avec les marchés | liens candidats faits ; le reste à faire |
+| E | recherche active adaptative (planner, router, valeur, mémoire, budget) | v1 déterministe faite pour les séismes ; planificateur périodique à faire |
 | F | mesure de la contribution des sources, classement, bandit éventuel | à faire |
 | G | pages du dashboard : registre, flux, connexions, performance, budget, requêtes, mémoire | à faire |

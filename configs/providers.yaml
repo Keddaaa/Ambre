@@ -1,0 +1,89 @@
+# API registry (ADR-010). A provider can only be enabled if its status is VERIFIED_FREE or
+# VERIFIED_LIMITED, it needs no key, and it has an internal budget. Never put a key here.
+# `provider_limits` = what the provider documents (empty = unknown, see docs/API_LIMITS.md).
+# `internal_budget` = what AMBRE enforces, always at or below the documented limit.
+# Relevance values in `capabilities` are a-priori weights, not measurements.
+providers:
+  usgs_earthquakes:
+    name: USGS Earthquake Catalog
+    domain: seismic
+    status: VERIFIED_FREE
+    enabled: true
+    authentication: none
+    verified_on: "2026-11-02"
+    provider_limits: {}
+    internal_budget: {min_interval_seconds: 60, per_hour: 30, per_day: 500}
+    reserve_fraction: 0.2
+    freshness_seconds: 600
+    capabilities: {recent_earthquakes: 0.9}
+
+  nasa_eonet:
+    name: NASA EONET v3
+    domain: natural_events
+    status: VERIFIED_FREE
+    enabled: false
+    verified_on: "2026-11-02"
+    provider_limits: {}
+    internal_budget: {min_interval_seconds: 300, per_day: 200}
+    freshness_seconds: 1800
+
+  open_meteo:
+    name: Open-Meteo
+    domain: weather
+    status: VERIFIED_LIMITED
+    enabled: false
+    verified_on: "2026-11-02"
+    allow_commercial_use: false
+    provider_limits: {per_minute: 600, per_hour: 5000, per_day: 10000}
+    internal_budget: {per_day: 500}
+    freshness_seconds: 3600
+
+  gdelt:
+    name: GDELT DOC 2.0
+    domain: news
+    status: VERIFIED_LIMITED
+    enabled: false
+    verified_on: "2026-11-02"
+    provider_limits: {min_interval_seconds: 5}
+    internal_budget: {min_interval_seconds: 10, per_day: 2000}
+    freshness_seconds: 900
+
+  hacker_news:
+    name: Hacker News API
+    domain: technology
+    status: VERIFIED_FREE
+    enabled: false
+    verified_on: "2026-11-02"
+    provider_limits: {}
+    internal_budget: {min_interval_seconds: 1, per_hour: 600}
+    freshness_seconds: 600
+
+  github:
+    name: GitHub REST API
+    domain: technology
+    status: VERIFIED_LIMITED
+    enabled: false
+    verified_on: "2026-11-02"
+    provider_limits: {per_hour: 60}
+    internal_budget: {per_hour: 30}
+    freshness_seconds: 1800
+
+  bluesky:
+    name: Bluesky (public reads of official accounts)
+    domain: social
+    status: VERIFIED_LIMITED
+    enabled: false
+    verified_on: "2026-11-02"
+    provider_limits: {}
+    internal_budget: {min_interval_seconds: 5, per_hour: 120}
+    freshness_seconds: 600
+
+  manifold:
+    name: Manifold Markets (read-only)
+    domain: markets
+    status: VERIFIED_LIMITED
+    enabled: false
+    verified_on: "2026-11-02"
+    provider_limits: {per_minute: 500}
+    internal_budget: {per_minute: 60}
+    freshness_seconds: 300

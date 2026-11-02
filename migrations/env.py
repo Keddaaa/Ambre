@@ -5,6 +5,7 @@ from alembic import context
 from ambre.config.settings import Settings
 from ambre.infrastructure.db import make_engine
 from ambre.infrastructure.orm import Base
+from ambre.intelligence import orm as _intelligence_orm  # noqa: F401  (registers the tables)
 
 config = context.config
 if config.config_file_name is not None:
