@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ambre.domain.models import BinaryMarket, MarketSnapshot, SimulationStatus
 from ambre.evaluation_engine.backtest import BacktestMarket
+from ambre.evaluation_engine.forward import ForwardObservation
 from ambre.evaluation_engine.historical import HistoricalMarket
 from ambre.evaluation_engine.history import PriceHistory, PricePoint
 from ambre.infrastructure.orm import (
@@ -477,3 +478,41 @@ def historical_markets(session: Session) -> list[HistoricalMarket]:
             )
         )
     return out
+
+
+def forward_observations(
+    session: Session, min_age_days: float, max_age_days: float
+) -> tuple[list[ForwardObservation], dict[str, int]]:
+    """The forward-test sample (ADR-019): for each market, the model's FIRST decision taken while
+    the market's age was inside the window, kept only if the market resolved YES/NO strictly after
+    that decision. Decisions of any other model are ignored. Also the counts behind it."""
+    stmt = (
+        select(DecisionRow, MarketRow)
+        .join(MarketRow, MarketRow.id == DecisionRow.market_id)
+        .where(DecisionRow.model_version.like("recalibrated-price%"))
+        .order_by(DecisionRow.created_at, DecisionRow.decision_id)
+    )
+    first: dict[str, tuple[DecisionRow, MarketRow]] = {}
+    for decision, market in session.execute(stmt).all():
+        age_days = (decision.created_at - market.created_at).total_seconds() / 86_400.0
+        if min_age_days <= age_days <= max_age_days and market.id not in first:
+            first[market.id] = (decision, market)
+    observations = [
+        ForwardObservation(
+            market_id=market.id,
+            question=market.question,
+            market_probability=decision.market_probability,
+            estimated_probability=decision.estimated_probability,
+            outcome=market.resolution == "YES",
+        )
+        for decision, market in first.values()
+        if market.resolution in ("YES", "NO")
+        and market.resolution_at is not None
+        and decision.created_at < market.resolution_at
+    ]
+    counts = {
+        "markets_with_window_decision": len(first),
+        "resolved_yes_no": len(observations),
+        "pending": sum(1 for _, m in first.values() if m.resolution is None),
+    }
+    return observations, counts

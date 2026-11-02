@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from sqlalchemy import func, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -27,6 +28,7 @@ from ambre.config.settings import Settings
 from ambre.data_engine.history_fetch import fetch_histories, load_resolved_universe
 from ambre.data_engine.sync import MarketSyncService, SyncReport
 from ambre.evaluation_engine.backtest import run_backtest
+from ambre.evaluation_engine.forward import evaluate_forward
 from ambre.evaluation_engine.historical import (
     DEFAULT_HORIZONS_DAYS,
     build_observations,
@@ -35,6 +37,7 @@ from ambre.evaluation_engine.historical import (
 from ambre.execution_engine.executor import ExecutionModeNotAvailable
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.db import make_engine, make_session_factory
+from ambre.infrastructure.orm import LedgerRow
 from ambre.integrations.manifold.client import ManifoldClient
 from ambre.intelligence.connectors import CONNECTORS, build_providers
 from ambre.intelligence.coverage import coverage_report
@@ -444,6 +447,43 @@ def history_universe(
     return asyncio.run(_run())
 
 
+def forward_report(
+    factory: sessionmaker[Session], settings: Settings | None = None
+) -> dict[str, Any] | None:
+    """The pre-registered criterion of the forward test (ADR-019); None without the frozen model.
+
+    The primary report withholds its verdict and its figures until the sample is large enough.
+    The secondary figures are descriptive only and are not a criterion.
+    """
+    cfg = (settings or Settings()).prediction
+    if cfg.model != "recalibrated_price" or cfg.recalibration is None:
+        return None
+    window = cfg.recalibration
+    with factory() as session:
+        observations, counts = repo.forward_observations(
+            session, window.min_age_days, window.max_age_days
+        )
+        ledger = {
+            str(kind): {"entries": int(n), "amount": float(total or 0.0)}
+            for kind, n, total in session.execute(
+                select(LedgerRow.kind, func.count(), func.sum(LedgerRow.amount)).group_by(
+                    LedgerRow.kind
+                )
+            ).all()
+        }
+    return {
+        "hypothesis": "ADR-019",
+        "window_days": [window.min_age_days, window.max_age_days],
+        "counts": counts,
+        "report": asdict(evaluate_forward(observations)),
+        "secondary": {
+            "note": "descriptive only, not a success criterion: no verdict is drawn from it",
+            "bets": ledger.get("BET", {}).get("entries", 0),
+            "ledger": ledger,
+        },
+    }
+
+
 def history_eval(
     factory: sessionmaker[Session],
     settings: Settings | None = None,
@@ -500,6 +540,7 @@ def _parser() -> argparse.ArgumentParser:
     uni.add_argument("--since", default="2023-01-01", help="oldest creation date, YYYY-MM-DD")
     uni.add_argument("--stride-days", type=int, default=60)
     uni.add_argument("--per-anchor", type=int, default=25)
+    sub.add_parser("forward-report", help="the pre-registered criterion of the forward test")
     heval = sub.add_parser("history-eval", help="point-in-time evaluation on resolved markets")
     heval.add_argument("--horizons", default=",".join(str(h) for h in DEFAULT_HORIZONS_DAYS))
     heval.add_argument("--folds", action="store_true", help="include every observation")
@@ -588,6 +629,13 @@ def main(
                     args.per_anchor,
                 )
             )
+            return 0
+        if args.command == "forward-report":
+            result = forward_report(factory, settings)
+            if result is None:
+                logger.error("this configuration has no frozen recalibrated model (ADR-019)")
+                return 1
+            _emit(result)
             return 0
         if args.command == "history-eval":
             horizons = tuple(int(x) for x in args.horizons.split(",") if x.strip())

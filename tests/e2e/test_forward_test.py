@@ -127,3 +127,91 @@ def test_the_forward_test_never_places_a_real_order_or_leaves_paper_mode(
     bad = Settings(database_url="sqlite://", execution_mode=ExecutionMode.MANIFOLD_MANA)
     with pytest.raises(ExecutionModeNotAvailable):
         cycle(factory, T_CYCLE + timedelta(minutes=5), bad)
+
+
+# ------------------------------------------------------------------ the pre-registered criterion
+
+
+def _resolve(factory: sessionmaker[Session], market_id: str, outcome: str, at: Any) -> None:
+    from ambre.infrastructure.orm import MarketRow
+
+    with factory() as s:
+        m = s.get(MarketRow, market_id)
+        assert m is not None
+        m.is_resolved, m.resolution, m.resolution_at = True, outcome, at
+        s.commit()
+
+
+def test_the_criterion_uses_the_first_in_window_decision_of_resolved_markets_only(
+    factory: sessionmaker[Session],
+) -> None:
+    from ambre.infrastructure import repositories as repo
+
+    cycle(factory, T_CYCLE, FORWARD)
+    cycle(factory, T_CYCLE + timedelta(hours=2), FORWARD)  # a later decision, same market
+    with factory() as s:
+        obs, counts = repo.forward_observations(s, RECAL.min_age_days, RECAL.max_age_days)
+    assert obs == [] and counts["markets_with_window_decision"] == 1  # nothing resolved yet
+
+    _resolve(factory, "synthetic_in", "YES", T_CYCLE + timedelta(days=5))
+    _resolve(factory, "synthetic_old", "NO", T_CYCLE + timedelta(days=5))  # never in the window
+    with factory() as s:
+        obs, counts = repo.forward_observations(s, RECAL.min_age_days, RECAL.max_age_days)
+        first = s.scalars(
+            select(DecisionRow)
+            .where(DecisionRow.market_id == "synthetic_in")
+            .order_by(DecisionRow.created_at)
+        ).first()
+        assert first is not None
+    assert [o.market_id for o in obs] == ["synthetic_in"] and obs[0].outcome is True
+    assert obs[0].estimated_probability == first.estimated_probability  # the FIRST decision
+    assert counts == {"markets_with_window_decision": 1, "resolved_yes_no": 1, "pending": 0}
+
+
+def test_a_market_resolved_before_the_decision_is_not_a_forecast(
+    factory: sessionmaker[Session],
+) -> None:
+    from ambre.infrastructure import repositories as repo
+
+    cycle(factory, T_CYCLE, FORWARD)
+    _resolve(factory, "synthetic_in", "YES", T_CYCLE - timedelta(hours=1))
+    with factory() as s:
+        obs, _ = repo.forward_observations(s, RECAL.min_age_days, RECAL.max_age_days)
+    assert obs == []
+
+
+def test_decisions_of_another_model_never_enter_the_forward_criterion(
+    factory: sessionmaker[Session],
+) -> None:
+    from ambre.infrastructure import repositories as repo
+
+    cycle(factory, T_CYCLE, DEFAULT)  # the long-standing baseline decides here
+    _resolve(factory, "synthetic_in", "YES", T_CYCLE + timedelta(days=5))
+    with factory() as s:
+        obs, counts = repo.forward_observations(s, RECAL.min_age_days, RECAL.max_age_days)
+    assert obs == [] and counts["markets_with_window_decision"] == 0
+
+
+def test_the_report_command_hides_the_verdict_below_the_threshold(
+    factory: sessionmaker[Session],
+) -> None:
+    from ambre import cli
+
+    cycle(factory, T_CYCLE, FORWARD)
+    _resolve(factory, "synthetic_in", "YES", T_CYCLE + timedelta(days=5))
+    out = cli.forward_report(factory, FORWARD)
+    assert out is not None
+    assert out["report"]["status"] == "INSUFFICIENT_SAMPLE" and out["report"]["n"] == 1
+    assert out["report"]["ci95_clustered"] is None
+    assert out["report"]["mean_brier_difference"] is None
+    assert out["window_days"] == [2.0, 4.0]
+    assert out["secondary"]["note"].startswith("descriptive")
+    assert out["secondary"]["bets"] >= 0
+
+
+def test_the_report_command_refuses_a_configuration_without_the_frozen_model(
+    factory: sessionmaker[Session],
+) -> None:
+    from ambre import cli
+
+    assert cli.forward_report(factory, DEFAULT) is None
