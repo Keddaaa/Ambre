@@ -18,5 +18,19 @@ services:
       timeout: 3s
       retries: 10
 
+  # Worker : sync Manifold (GET uniquement) puis cycle de décision en mode PAPER, toutes les 5 min.
+  # Redémarre avec Docker. Le mode et l'interdiction d'ordres sont fixés ici, pas lus dans .env.
+  worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      EXECUTION_MODE: PAPER
+      ENABLE_MANIFOLD_ORDERS: "false"
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ambre}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ambre}
+    command: ["sh", "-c", "ambre init-db && ambre worker --interval 300"]
+
 volumes:
   ambre_pgdata:
