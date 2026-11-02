@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Suspense } from "react";
 
+import { ActivityPanel } from "@/components/activity";
 import { MobileNav, Sidebar } from "@/components/nav";
 
 import "./globals.css";
@@ -41,6 +42,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               {children}
             </main>
           </div>
+          <Suspense fallback={<div className="hidden w-72 border-l xl:block" />}>
+            <ActivityPanel />
+          </Suspense>
         </Providers>
       </body>
     </html>
