@@ -4,6 +4,7 @@
 
 ### Ajouté
 
+- Phase A du Global Intelligence Network : `API_CATALOG.md` (8 fournisseurs vérifiés dans leur documentation et par une requête GET réelle, le 2026-11-02), `API_LIMITS.md`, `DATA_LICENSES.md`, `INTELLIGENCE_ARCHITECTURE.md`, ADR-010. Aucun code : les modules `ambre.intelligence` arrivent aux phases B à G.
 - `evaluation_engine` (pur) : score de Brier, log loss, calibration par tranche, tailles d'échantillon, différence modèle − prix du marché avec intervalle à 95 %. Voir `docs/EVALUATION.md` et ADR-007.
 - `ambre evaluate` et `GET /evaluation`.
 - `/system` expose `active_strategy`.

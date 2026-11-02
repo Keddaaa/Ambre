@@ -11,6 +11,8 @@ Ces éléments n'existent **pas** en 0.1. Ils ne sont ni simulés ni représent�
 
 ## Navigation et veille autonomes (nécessité)
 
+Conception et fournisseurs vérifiés : `INTELLIGENCE_ARCHITECTURE.md`, `API_CATALOG.md`, `API_LIMITS.md`, `DATA_LICENSES.md` (ADR-010). Implémentation par phases B à G.
+
 Ambre ne peut pas rester un simple lecteur de l'API Manifold. Un marché de prédiction se déplace avec l'information : sans accès à des sources externes, l'estimation de probabilité ne peut que répéter le prix du marché ou un taux de base (voir ADR-004), donc ne peut pas démontrer d'avantage. La capacité de s'informer et de réagir est une condition pour que le projet atteigne son objectif, pas une option.
 
 **Principe :** liberté de navigation large à l'intérieur d'un périmètre borné.
