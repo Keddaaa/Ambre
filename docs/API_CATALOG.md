@@ -64,6 +64,8 @@ Limites : un corps `{}` ne signifie ni « aucun article » ni erreur : il doit �
 | Coût estimé | 0 en usage non commercial |
 | Statut | **VERIFIED_LIMITED** |
 
+**Connecteur actif (2026-11-02)** : `providers/open_meteo.py`. Variables vérifiées par une requête réelle : `temperature_2m_max`, `temperature_2m_min`, `precipitation_sum` (unités `°C`, `mm`), avec `forecast_days` de 1 à 16.
+
 Observé : `200`, JSON avec `daily.time` et `daily.temperature_2m_max` (unité `°C`), `utc_offset_seconds`, `timezone`. Le paramètre `timezone` est obligatoire avec les variables `daily`.
 
 Limites : une prévision n'est pas la mesure qui résout un marché de température. La station et la source de résolution du marché doivent être lues dans ses critères avant tout usage.

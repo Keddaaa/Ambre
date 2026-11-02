@@ -1,0 +1,24 @@
+# Parametrable research rules (ADR-013). Plain words only: no code, no model call.
+# `domains`: keywords that classify a market question. A keyword is matched as a whole word,
+# case-insensitively. Add a word here to teach the classifier; nothing else changes.
+# `reference_sources`: official bodies recognised when a question names one.
+# Nothing in this file is a probability or a trading rule.
+domains:
+  WEATHER:
+    [temperature, degrees, weather, rain, snow, snowfall, precipitation, heatwave, hurricane, storm, forecast]
+  EARTHQUAKE: [earthquake, earthquakes, quake, quakes, magnitude, seismic, tremor]
+  SPORT:
+    [championship, league, tournament, playoffs, nba, nfl, mlb, nhl, fifa, uefa, olympics, grand prix, world cup, super bowl]
+  ECONOMY:
+    [inflation, cpi, pce, gdp, unemployment, recession, payrolls, fed, ecb, interest rate]
+  TECHNOLOGY:
+    [openai, anthropic, google, microsoft, apple, gpt, release, launch, software, model, github, open-weights, ai]
+  FINANCE:
+    [stock, shares, bitcoin, btc, ethereum, eth, crypto, nasdaq, "s&p", "market cap", price of]
+  GEOPOLITICS:
+    [war, ceasefire, election, president, sanctions, treaty, nato, ukraine, russia, israel, gaza, iran, taiwan, invasion]
+  SCIENCE:
+    [nobel, vaccine, nasa, spacex, starship, physics, quantum, millennium, "peer review", clinical trial]
+
+reference_sources:
+  [NOAA, NWS, "National Weather Service", USGS, "Federal Reserve", BLS, "Bureau of Labor Statistics", Eurostat, ECB, NASA, WHO, CDC, "Open-Meteo"]

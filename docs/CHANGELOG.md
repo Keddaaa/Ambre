@@ -5,6 +5,7 @@
 ### Ajouté
 
 - Cognitive Vault v0.1 (`ambre.cognitive`, ADR-012) : notes versionnées et reliées, recherche, export Markdown (`ambre vault-export`), registre de règles avec cycle de vie, versions et audit, contraintes immuables, détection de conflits. Migration `0004`. Tests unitaires, d'intégration et de propriété (Hypothesis). Aucune règle n'est encore consommée par un moteur.
+- Resolution Intelligence Engine, planificateur générique à neuf domaines, connecteur Open-Meteo (prévisions journalières), Context Feature Bridge et garde d'estimation `INSUFFICIENT_MODEL`. `ambre research` traite séismes et météo. Voir `docs/RESOLUTION_INTELLIGENCE.md` et ADR-013.
 
 - `ambre.intelligence` : premier pipeline d'acquisition d'information de bout en bout, avec USGS (séismes). Registre des fournisseurs (`configs/providers.yaml`), Budget Controller, enveloppe typée à quatre horloges, planificateur de lacunes, routeur expliqué, estimateur de valeur (classement a priori), mémoire de recherche, liens candidats vers les marchés. `ambre research`. Migration `0003`. ADR-011. Ne produit aucune décision ni mise (testé).
 

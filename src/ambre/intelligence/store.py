@@ -73,9 +73,16 @@ def mark_failure(
 
 
 def last_request(
-    session: Session, need: str, provider_id: str, statuses: tuple[str, ...]
+    session: Session,
+    need: str,
+    provider_id: str,
+    statuses: tuple[str, ...],
+    *,
+    group_key: str | None = None,
 ) -> IntelRequestRow | None:
-    return session.scalars(
+    """The newest request of this need and provider with one of ``statuses``. ``group_key``
+    keeps answers about different places from standing in for one another."""
+    rows = session.scalars(
         select(IntelRequestRow)
         .where(
             IntelRequestRow.need == need,
@@ -83,8 +90,12 @@ def last_request(
             IntelRequestRow.status.in_(statuses),
         )
         .order_by(IntelRequestRow.created_at.desc())
-        .limit(1)
-    ).first()
+        .limit(200)
+    )
+    for row in rows:
+        if group_key is None or row.params.get("group_key") == group_key:
+            return row
+    return None
 
 
 def save_observation(session: Session, obs: Observation, request_id: str) -> bool:
@@ -136,3 +147,39 @@ def save_link(session: Session, link: MarketLink, now: datetime) -> bool:
         )
     )
     return True
+
+
+def observation_from_row(row: IntelObservationRow) -> Observation:
+    return Observation.model_validate(
+        {
+            "observation_id": row.observation_id,
+            "provider_id": row.provider_id,
+            "domain": row.domain,
+            "kind": row.kind,
+            "payload": row.payload,
+            "ingested_at": row.ingested_at,
+            "verification_status": row.verification_status,
+            "title": row.title,
+            "source_url": row.source_url,
+            "event_at": row.event_at,
+            "published_at": row.published_at,
+            "available_at": row.available_at,
+            "source_reliability": row.source_reliability,
+            "revision": row.revision,
+        }
+    )
+
+
+def market_observations(session: Session, market_id: str) -> list[Observation]:
+    """Every stored observation linked to a market, oldest first (the bridge applies the
+    availability rules; nothing is filtered here)."""
+    rows = session.scalars(
+        select(IntelObservationRow)
+        .join(
+            IntelMarketLinkRow,
+            IntelMarketLinkRow.observation_id == IntelObservationRow.observation_id,
+        )
+        .where(IntelMarketLinkRow.market_id == market_id)
+        .order_by(IntelObservationRow.ingested_at, IntelObservationRow.observation_id)
+    )
+    return [observation_from_row(r) for r in rows]

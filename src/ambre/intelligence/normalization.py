@@ -2,8 +2,8 @@
 values stay ``None`` and invalid items are counted and skipped, never repaired."""
 
 import math
-from datetime import UTC, datetime
-from typing import Any
+from datetime import UTC, date, datetime
+from typing import Any, get_args
 
 from pydantic import ValidationError
 
@@ -15,10 +15,18 @@ from ambre.intelligence.models import (
     ObservationKind,
     ResultKind,
     VerificationStatus,
+    WeatherForecastPayload,
     make_observation_id,
 )
 
 USGS_ID = "usgs_earthquakes"
+OPEN_METEO_ID = "open_meteo"
+#: Our variable -> the Open-Meteo daily series (all three seen live on 2026-11-02).
+OPEN_METEO_SERIES = {
+    "temperature_max": "temperature_2m_max",
+    "temperature_min": "temperature_2m_min",
+    "precipitation_sum": "precipitation_sum",
+}
 
 _STATUS_TO_VERIFICATION = {
     "reviewed": VerificationStatus.CONFIRMED,  # reviewed by the primary source
@@ -120,3 +128,86 @@ def parse_usgs_geojson(body: object, ingested_at: datetime) -> FetchResult:
             kind=ResultKind.INCONCLUSIVE, detail="every item was invalid", invalid_items=invalid
         )
     return FetchResult(kind=ResultKind.OK, observations=observations, invalid_items=invalid)
+
+
+def _finite_or_none(value: Any) -> tuple[bool, float | None]:
+    """(valid, value): a JSON null is a valid unknown, a non-number or non-finite value is not."""
+    if value is None:
+        return True, None
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+        return False, None
+    return True, float(value)
+
+
+def parse_open_meteo_daily(body: object, variable: str, ingested_at: datetime) -> FetchResult:
+    """Parse an Open-Meteo forecast response with a ``daily`` block into forecast observations.
+
+    A forecast is a model output: kind FORECAST, never verified, and it carries no issuance time,
+    so it is available to AMBRE from the moment it was fetched (``available_at = ingested_at``).
+    Each fetch is a new revision: earlier forecasts are never overwritten.
+    """
+    if variable not in get_args(WeatherForecastPayload.model_fields["variable"].annotation):
+        raise ValueError(f"unknown weather variable {variable!r}")
+    series_key = OPEN_METEO_SERIES[variable]
+    inconclusive = FetchResult(kind=ResultKind.INCONCLUSIVE, detail="unexpected response body")
+    if not isinstance(body, dict):
+        return inconclusive
+    daily, lat, lon = body.get("daily"), body.get("latitude"), body.get("longitude")
+    if not isinstance(daily, dict) or not isinstance(daily.get("time"), list):
+        return inconclusive
+    times, values = daily["time"], daily.get(series_key)
+    if not isinstance(values, list) or len(values) != len(times):
+        return inconclusive
+    if not all(isinstance(x, int | float) and not isinstance(x, bool) for x in (lat, lon)):
+        return inconclusive
+    if not times:
+        return FetchResult(kind=ResultKind.EMPTY)
+    units = body.get("daily_units")
+    unit = units.get(series_key) if isinstance(units, dict) else None
+    tz = body.get("timezone")
+    observations: list[Observation] = []
+    invalid = 0
+    for raw_day, raw_value in zip(times, values, strict=True):
+        ok, value = _finite_or_none(raw_value)
+        try:
+            day = date.fromisoformat(raw_day) if isinstance(raw_day, str) else None
+        except ValueError:
+            day = None
+        if day is None or not ok:
+            invalid += 1
+            continue
+        try:
+            payload = WeatherForecastPayload(
+                variable=variable,
+                target_date=day.isoformat(),
+                value=value,
+                unit=unit if isinstance(unit, str) else None,
+                latitude=float(lat),  # type: ignore[arg-type]
+                longitude=float(lon),  # type: ignore[arg-type]
+                timezone=tz if isinstance(tz, str) else None,
+            )
+        except ValidationError:
+            invalid += 1
+            continue
+        native = f"{float(lat):.4f},{float(lon):.4f}|{variable}|{day.isoformat()}"  # type: ignore[arg-type]
+        observations.append(
+            Observation(
+                observation_id=make_observation_id(OPEN_METEO_ID, native, ingested_at.isoformat()),
+                provider_id=OPEN_METEO_ID,
+                domain=Domain.WEATHER,
+                kind=ObservationKind.FORECAST,
+                payload=payload,
+                ingested_at=ingested_at,
+                verification_status=VerificationStatus.UNVERIFIED,
+                title=f"{variable} forecast for {day.isoformat()}",
+                event_at=None,
+                published_at=None,
+                available_at=ingested_at,
+                revision=ingested_at.isoformat(),
+            )
+        )
+    if not observations:
+        return FetchResult(
+            kind=ResultKind.INCONCLUSIVE, detail="every item was invalid", invalid_items=invalid
+        )
+    return FetchResult(kind=ResultKind.OK, observations=tuple(observations), invalid_items=invalid)

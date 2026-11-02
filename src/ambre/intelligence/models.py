@@ -44,6 +44,7 @@ class InfoNeed(StrEnum):
     """What a market lacks. A provider declares which needs it can serve."""
 
     RECENT_EARTHQUAKES = "recent_earthquakes"
+    WEATHER_FORECAST = "weather_forecast"
 
 
 class ObservationKind(StrEnum):
@@ -128,7 +129,28 @@ class EarthquakePayload(_Frozen):
         return v
 
 
-Payload = EarthquakePayload  # becomes a discriminated union as providers are added
+class WeatherForecastPayload(_Frozen):
+    """One forecast value for one place and one calendar day. A forecast is a model output:
+    it is never an observation of what happened."""
+
+    payload_type: Literal["weather_forecast"] = "weather_forecast"
+    variable: Literal["temperature_max", "temperature_min", "precipitation_sum"]
+    target_date: str  # ISO date in the place's own timezone
+    value: float | None = None  # None when the provider returned no value
+    unit: str | None = None
+    latitude: Annotated[float, Field(ge=-90, le=90)]
+    longitude: Annotated[float, Field(ge=-180, le=180)]
+    timezone: str | None = None
+
+    @field_validator("value")
+    @classmethod
+    def _finite_value(cls, v: float | None) -> float | None:
+        if v is not None and not math.isfinite(v):
+            raise ValueError("value must be finite")
+        return v
+
+
+Payload = Annotated[EarthquakePayload | WeatherForecastPayload, Field(discriminator="payload_type")]
 
 
 class Observation(_Frozen):

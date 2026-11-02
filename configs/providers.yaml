@@ -31,12 +31,15 @@ providers:
     name: Open-Meteo
     domain: weather
     status: VERIFIED_LIMITED
-    enabled: false
+    enabled: true
+    authentication: none
     verified_on: "2026-11-02"
-    allow_commercial_use: false
+    allow_commercial_use: false  # the free API is non-commercial only (docs/DATA_LICENSES.md)
     provider_limits: {per_minute: 600, per_hour: 5000, per_day: 10000}
-    internal_budget: {per_day: 500}
+    internal_budget: {per_minute: 20, per_hour: 120, per_day: 500}
+    reserve_fraction: 0.2
     freshness_seconds: 3600
+    capabilities: {weather_forecast: 0.8}
 
   gdelt:
     name: GDELT DOC 2.0

@@ -31,6 +31,11 @@ _MAG_PATTERNS = (
 )
 
 
+def _has_word(text: str, alias: str) -> bool:
+    """Whole-word, case-insensitive match: "paris" is not found inside "comparison"."""
+    return re.search(rf"(?<![\w]){re.escape(alias)}(?![\w])", text, re.IGNORECASE) is not None
+
+
 @dataclass(frozen=True)
 class Region:
     """A named area. ``bbox`` = (min_lat, max_lat, min_lon, max_lon) is a modelling choice
@@ -39,6 +44,9 @@ class Region:
     name: str
     aliases: tuple[str, ...]
     bbox: tuple[float, float, float, float]
+    #: (latitude, longitude) of a point to query for point-based data such as forecasts
+    center: tuple[float, float] | None = None
+    timezone: str | None = None  # IANA name, needed to read a "calendar day" correctly
 
     def contains(self, lat: float | None, lon: float | None) -> bool:
         if lat is None or lon is None:
@@ -49,8 +57,7 @@ class Region:
     def matches_text(self, text: str | None) -> bool:
         if not text:
             return False
-        lowered = text.lower()
-        return any(alias in lowered for alias in self.aliases)
+        return any(_has_word(text, alias) for alias in self.aliases)
 
 
 class Gazetteer:
@@ -59,11 +66,10 @@ class Gazetteer:
 
     def find(self, text: str) -> Region | None:
         """The region whose longest alias appears in ``text`` (longest wins)."""
-        lowered = text.lower()
         best: tuple[int, Region] | None = None
         for region in self._regions:
             for alias in region.aliases:
-                if alias in lowered and (best is None or len(alias) > best[0]):
+                if _has_word(text, alias) and (best is None or len(alias) > best[0]):
                     best = (len(alias), region)
         return best[1] if best else None
 
@@ -82,7 +88,20 @@ def parse_gazetteer(document: Mapping[str, Any]) -> Gazetteer:
             or not (-180 <= bbox[2] <= bbox[3] <= 180)
         ):
             raise ValueError(f"gazetteer region {name}: invalid bbox {bbox}")
-        out.append(Region(name=str(name), aliases=aliases, bbox=bbox))
+        raw_center = raw.get("center")
+        center = (float(raw_center[0]), float(raw_center[1])) if raw_center else None
+        if center is not None and not (-90 <= center[0] <= 90 and -180 <= center[1] <= 180):
+            raise ValueError(f"gazetteer region {name}: invalid center {center}")
+        tz = raw.get("timezone")
+        out.append(
+            Region(
+                name=str(name),
+                aliases=aliases,
+                bbox=bbox,
+                center=center,
+                timezone=str(tz) if tz else None,
+            )
+        )
     return Gazetteer(out)
 
 

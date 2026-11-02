@@ -6,7 +6,21 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2] / "src" / "ambre" / "intelligence"
-PURE = ["models", "budget", "registry", "normalization", "planning", "value", "routing", "matching"]
+PURE = [
+    "models",
+    "budget",
+    "registry",
+    "normalization",
+    "planning",
+    "value",
+    "routing",
+    "matching",
+    "resolution",
+    "domain_params",
+    "generic_planning",
+    "context",
+    "estimation",
+]
 FORBIDDEN = ("ambre.infrastructure", "ambre.integrations", "ambre.pipeline", "httpx", "sqlalchemy")
 
 
