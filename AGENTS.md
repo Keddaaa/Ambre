@@ -24,9 +24,10 @@ Les autres documents de `docs/` décrivent l'état du code. Ils ne dupliquent pa
 | `feature_engine`, `prediction_engine`, `value_engine`, `strategy_engine`, `risk_engine`, `survival_engine`, `evaluation_engine` | Calculs | **oui** |
 | `portfolio`, `execution_engine` | Ledger, positions, exécuteur papier | non |
 | `intelligence` | Réseau d'acquisition d'information (ADR-010) : `models`, `budget`, `registry`, `normalization`, `planning`, `value`, `routing`, `matching` sont **purs** ; `providers/`, `store`, `orm`, `service`, `connectors` ne le sont pas. Lecture seule, ne décide jamais d'une mise | mixte |
+| `cognitive` | Cognitive Vault (ADR-012) : notes, relations, règles et contraintes. `models`, `constraints`, `lifecycle`, `markdown` sont **purs** ; `orm`, `vault`, `rules` ne le sont pas. Les règles sont des données inertes tant qu'elles ne sont pas ACTIVE ; aucun accès au chemin de pari | mixte |
 | `pipeline.py`, `cli.py`, `api/` | Orchestration, CLI, FastAPI | non |
 
-**Règle de dépendance :** les modules purs n'importent ni `infrastructure` ni `integrations`. Les moteurs quantitatifs ne dépendent pas de `intelligence`, et `intelligence` n'importe ni `execution_engine`, ni `portfolio`, ni `risk_engine` (testé). Le réseau reste dans `integrations/manifold`, la persistance dans `infrastructure`.
+**Règle de dépendance :** les modules purs n'importent ni `infrastructure` ni `integrations`. Les moteurs quantitatifs ne dépendent ni de `intelligence` ni de `cognitive`, et `intelligence` comme `cognitive` n'importent ni `execution_engine`, ni `portfolio`, ni `risk_engine` (testé). Le réseau reste dans `integrations/manifold`, la persistance dans `infrastructure`.
 
 ## Commandes
 
