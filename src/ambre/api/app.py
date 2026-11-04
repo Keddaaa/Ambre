@@ -6,7 +6,7 @@ them calls Manifold, and no route can change the execution mode.
 """
 
 from collections.abc import Callable, Iterator
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
@@ -25,9 +25,11 @@ from ambre.execution_engine.executor import ExecutionModeNotAvailable
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.db import make_engine, make_session_factory
 from ambre.infrastructure.orm import DecisionRow, MarketRow
+from ambre.intelligence.store import ResearchSource, market_research_sources
 from ambre.pipeline import (
     ManualOrder,
     ManualOrderError,
+    betting_stats_for_simulation,
     evaluation_for_simulation,
     manual_order,
     run_cycle,
@@ -35,6 +37,16 @@ from ambre.pipeline import (
 from ambre.portfolio.service import PortfolioService
 
 NO_SIMULATION = "no active simulation; run `ambre cycle`"
+MAX_CITED_SOURCES = 5
+
+
+@dataclass(frozen=True)
+class DecisionContext:
+    """What a decision needs from other tables to be displayed."""
+
+    questions: dict[str, str]
+    urls: dict[str, str | None]
+    research: dict[str, list[ResearchSource]]
 
 
 def _utc_now() -> datetime:
@@ -74,10 +86,26 @@ def create_app(
         sim = repo.get_current_simulation(session)
         return sim.id if sim else None
 
-    def decision_out(d: DecisionRow, questions: dict[str, str]) -> sc.DecisionOut:
+    def decision_out(d: DecisionRow, context: DecisionContext) -> sc.DecisionOut:
         out = sc.DecisionOut.model_validate(d)
-        out.market_question = questions.get(d.market_id)
+        out.market_question = context.questions.get(d.market_id)
+        out.market_url = context.urls.get(d.market_id)
+        known = [s for s in context.research.get(d.market_id, []) if s.linked_at <= d.created_at]
+        out.research_sources = [
+            sc.ResearchSourceOut.model_validate(s) for s in known[:MAX_CITED_SOURCES]
+        ]
         return out
+
+    def decision_context(session: Session, ids: set[str]) -> DecisionContext:
+        rows = session.query(MarketRow.id, MarketRow.question, MarketRow.url).filter(
+            MarketRow.id.in_(ids)
+        )
+        questions: dict[str, str] = {}
+        urls: dict[str, str | None] = {}
+        for market_id, question, url in rows:
+            questions[market_id] = question
+            urls[market_id] = url
+        return DecisionContext(questions, urls, market_research_sources(session, ids))
 
     def questions_for(session: Session, ids: set[str]) -> dict[str, str]:
         if not ids:
@@ -168,13 +196,14 @@ def create_app(
             decisions, _ = repo.list_decisions_filtered(
                 session, sim_id, market_id=market_id, limit=1000
             )
+        context = decision_context(session, {market_id})
         return sc.MarketDetailOut(
             market=sc.MarketOut.model_validate(market),
             snapshots=[
                 sc.SnapshotOut.model_validate(s)
                 for s in repo.list_snapshots_for_market(session, market_id)
             ],
-            decisions=[decision_out(d, {market_id: market.question}) for d in decisions],
+            decisions=[decision_out(d, context) for d in decisions],
         )
 
     @app.get("/decisions", response_model=sc.DecisionsPage)
@@ -194,8 +223,8 @@ def create_app(
             limit=limit,
             offset=offset,
         )
-        questions = questions_for(session, {d.market_id for d in rows})
-        return sc.DecisionsPage(items=[decision_out(d, questions) for d in rows], total=total)
+        context = decision_context(session, {d.market_id for d in rows})
+        return sc.DecisionsPage(items=[decision_out(d, context) for d in rows], total=total)
 
     def require_simulation(session: Session):  # type: ignore[no-untyped-def]
         sim = repo.get_current_simulation(session)
@@ -208,6 +237,11 @@ def create_app(
         sim = require_simulation(session)
         report = evaluation_for_simulation(session, sim.id)
         return sc.EvaluationOut.model_validate(report)
+
+    @app.get("/stats", response_model=sc.StatsOut)
+    def stats(session: Db) -> sc.StatsOut:
+        sim = require_simulation(session)
+        return sc.StatsOut.model_validate(betting_stats_for_simulation(session, sim.id))
 
     @app.get("/portfolio", response_model=sc.PortfolioOut)
     def portfolio(session: Db) -> sc.PortfolioOut:
@@ -299,7 +333,7 @@ def create_app(
         session.commit()
         row = session.get(DecisionRow, decision_id)
         assert row is not None
-        return decision_out(row, questions_for(session, {row.market_id}))
+        return decision_out(row, decision_context(session, {row.market_id}))
 
     @app.post("/control/run-cycle", response_model=sc.CycleOut)
     def run_cycle_now(session: Db) -> sc.CycleOut:

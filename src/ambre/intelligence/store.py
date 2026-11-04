@@ -1,5 +1,7 @@
 """Persistence helpers of the Global Intelligence Network. The caller owns the transaction."""
 
+from collections.abc import Collection
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import select
@@ -188,6 +190,50 @@ def market_observations(session: Session, market_id: str) -> list[Observation]:
         .order_by(IntelObservationRow.ingested_at, IntelObservationRow.observation_id)
     )
     return [observation_from_row(r) for r in rows]
+
+
+@dataclass(frozen=True)
+class ResearchSource:
+    """One observation linked to a market, as a citation."""
+
+    provider_id: str
+    title: str | None
+    url: str | None
+    published_at: datetime | None
+    linked_at: datetime
+    evidence_level: str
+    usable_for_prediction: bool
+
+
+def market_research_sources(
+    session: Session, market_ids: Collection[str]
+) -> dict[str, list[ResearchSource]]:
+    """Research linked to each market, latest link first."""
+    if not market_ids:
+        return {}
+    rows = session.execute(
+        select(IntelMarketLinkRow, IntelObservationRow)
+        .join(
+            IntelObservationRow,
+            IntelObservationRow.observation_id == IntelMarketLinkRow.observation_id,
+        )
+        .where(IntelMarketLinkRow.market_id.in_(market_ids))
+        .order_by(IntelMarketLinkRow.created_at.desc(), IntelMarketLinkRow.id)
+    ).all()
+    out: dict[str, list[ResearchSource]] = {}
+    for link, obs in rows:
+        out.setdefault(link.market_id, []).append(
+            ResearchSource(
+                provider_id=obs.provider_id,
+                title=obs.title,
+                url=obs.source_url,
+                published_at=obs.published_at,
+                linked_at=link.created_at,
+                evidence_level=link.evidence_level,
+                usable_for_prediction=link.usable_for_prediction,
+            )
+        )
+    return out
 
 
 def append_feature_journal(

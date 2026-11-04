@@ -95,6 +95,16 @@ export interface Snapshot {
   source_id: string;
 }
 
+export interface ResearchSource {
+  provider_id: string;
+  title: string | null;
+  url: string | null;
+  published_at: string | null;
+  linked_at: string;
+  evidence_level: string;
+  usable_for_prediction: boolean;
+}
+
 export interface Decision {
   decision_id: string;
   market_id: string;
@@ -116,6 +126,9 @@ export interface Decision {
   reasons: string[];
   invalidation: string[];
   source_ids: string[];
+  market_url: string | null;
+  /** Research linked to the market before this decision. It never feeds the estimate. */
+  research_sources: ResearchSource[];
   survival_state: string;
   risk_reasons: string[];
   execution_status: string;
@@ -209,6 +222,82 @@ export interface Evaluation {
   brier_difference_ci95: [number, number] | null;
   model_calibration: CalibrationBin[];
   market_calibration: CalibrationBin[];
+}
+
+export interface BetLine {
+  market_id: string;
+  question: string | null;
+  side: string;
+  stake: number;
+  entry_price: number;
+  payout: number;
+  pnl: number;
+  resolution: string | null;
+  settled_at: string;
+}
+
+export interface BetGroup {
+  label: string;
+  bets: number;
+  won: number;
+  lost: number;
+  win_rate: number | null;
+  staked: number;
+  realized_pnl: number | null;
+}
+
+export interface PnlPoint {
+  index: number;
+  at: string;
+  pnl: number;
+  cumulative_pnl: number;
+}
+
+export interface DayCount {
+  day: string;
+  bets: number;
+  staked: number;
+}
+
+export interface Stats {
+  decisions: { total: number; simulated: number; rejected: number; no_trade: number };
+  bets: number;
+  open: number;
+  settled: number;
+  won: number;
+  lost: number;
+  pushed: number;
+  refunded: number;
+  win_rate: number | null;
+  win_rate_ci95: [number, number] | null;
+  market_implied_win_rate: number | null;
+  model_implied_win_rate: number | null;
+  sufficient_sample: boolean;
+  min_sample: number;
+  total_staked: number;
+  open_stake: number;
+  average_stake: number | null;
+  median_stake: number | null;
+  largest_stake: number | null;
+  smallest_stake: number | null;
+  realized_pnl: number | null;
+  unrealized_pnl: number | null;
+  total_pnl: number | null;
+  roi: number | null;
+  average_win: number | null;
+  average_loss: number | null;
+  profit_factor: number | null;
+  best_bet: BetLine | null;
+  worst_bet: BetLine | null;
+  longest_win_streak: number;
+  longest_loss_streak: number;
+  /** Positive for a run of wins, negative for a run of losses. */
+  current_streak: number;
+  by_side: BetGroup[];
+  by_entry_price: BetGroup[];
+  pnl_curve: PnlPoint[];
+  bets_per_day: DayCount[];
+  recent_settled: BetLine[];
 }
 
 export interface OrderRequest {

@@ -98,3 +98,29 @@ La baseline AMBRE est « inconclusif » à chaque horizon (écart de l'ordre de 
 ### Construction exacte de l'intervalle du backtest (`ambre backtest`, `ambre evaluate`)
 
 `metrics._paired_ci` : pour chaque marché, `d_i = (p_modèle − issue)² − (p_marché − issue)²` ; `d̄` est leur moyenne, `s²` leur variance d'échantillon (diviseur `n − 1`), l'intervalle est `d̄ ± 1,96 · √(s²/n)`. Il suppose des marchés indépendants et une moyenne approximativement normale ; il n'a ni correction de dépendance, ni test de normalité, ni correction pour comparaisons multiples. L'évaluation historique ci-dessus ajoute l'intervalle par grappes.
+
+## Statistiques de paris
+
+Source : `src/ambre/evaluation_engine/betting.py` (pur), `pipeline.betting_stats_for_simulation`, `GET /stats`, page `/stats` du dashboard.
+
+Un pari est une position réellement ouverte. Une décision `REJECTED` porte une mise proposée mais jamais engagée : elle ne compte que dans l'entonnoir des décisions.
+
+- Gagné ou perdu se juge sur l'argent (`payout` contre `cost`), ce qui couvre les résolutions `MKT` partielles.
+- Les remboursements (`CANCEL`) et les paris à l'équilibre sortent du taux de réussite. Les remboursements sortent aussi du ROI.
+- L'intervalle du taux de réussite est un intervalle de Wilson à 95 %, valable à 0 % ou 100 % sur un petit échantillon.
+- Une valeur non calculable reste `null` : pas de taux sans pari décidé, pas de P&L latent si un prix manque.
+
+Limites : pas de répartition par thème, car `group_slugs` est vide sur les marchés. En dessous de 30 paris décidés, aucune conclusion n'est permise.
+
+## Justifications d'Ambre
+
+Source : `apps/dashboard/lib/justification.ts` (pur). Le Journal et la page Statistiques affichent, sous chaque décision, une explication à la première personne et au féminin.
+
+Le texte est reconstruit uniquement à partir des champs journalisés à la décision. Aucun modèle de langue ne le rédige, et une raison non traduite reste affichée telle quelle.
+
+Chaque décision cite ses sources (`market_url`, `research_sources` dans `GET /decisions` et `GET /markets/{id}`) :
+
+- La page du marché Manifold, seule source de l'estimation.
+- Au plus 5 recherches liées au marché. Un lien créé après la décision n'est jamais cité, pour ne pas réécrire ce qu'Ambre savait.
+- Ces recherches sont affichées comme lues, sans effet sur l'estimation : `ambre.intelligence` n'alimente pas le modèle (ADR-010).
+- Une URL issue d'un flux n'est rendue cliquable que si elle est en `http` ou `https`.

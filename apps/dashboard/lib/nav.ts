@@ -23,7 +23,10 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   {
     id: "analyse",
     label: "Analyse",
-    links: [{ href: "/evaluation", label: "Évaluation" }],
+    links: [
+      { href: "/stats", label: "Statistiques" },
+      { href: "/evaluation", label: "Évaluation" },
+    ],
   },
   {
     id: "systeme",

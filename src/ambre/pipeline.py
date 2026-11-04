@@ -29,12 +29,19 @@ from ambre.domain.models import (
     SurvivalAssessment,
     SurvivalState,
 )
+from ambre.evaluation_engine.betting import (
+    BetRecord,
+    BettingStats,
+    DecisionFunnel,
+    betting_stats,
+)
 from ambre.evaluation_engine.metrics import EvaluationReport, ScoredForecast, evaluate
 from ambre.execution_engine.executor import DecisionDraft, ExecutionGate, PaperExecutor
 from ambre.feature_engine.features import extract_features
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.orm import DecisionRow, MarketRow, SnapshotRow
 from ambre.portfolio.service import (
+    OPEN,
     PortfolioService,
     SettlementReport,
     create_simulation,
@@ -329,6 +336,50 @@ def evaluation_for_simulation(session: Session, simulation_id: str) -> Evaluatio
         for q, p, res in repo.resolved_decision_scores(session, simulation_id)
     ]
     return evaluate(scored)
+
+
+def betting_stats_for_simulation(session: Session, simulation_id: str) -> BettingStats:
+    """Win rate, stakes and P&L of the simulation, open bets marked at the latest price."""
+    svc = PortfolioService(session, simulation_id)
+    rows = repo.bets_of_simulation(session, simulation_id)
+    prices: dict[str, float] = {}
+    open_positions = [pos for pos, _, _ in rows if pos.status == OPEN]
+    for pos in open_positions:
+        snap = repo.latest_snapshot_for_market(session, pos.market_id)
+        if snap is not None:
+            prices[pos.market_id] = snap.probability
+    values = {p.id: value for p, _, value in svc.position_values(prices, open_positions)}
+
+    def win_probability(pos_side: str, decision: DecisionRow | None) -> float | None:
+        if decision is None:
+            return None
+        p_yes = decision.estimated_probability
+        return p_yes if pos_side == Side.YES.value else 1.0 - p_yes
+
+    records = [
+        BetRecord(
+            market_id=pos.market_id,
+            question=market.question,
+            side=pos.side,
+            stake=pos.cost,
+            shares=pos.shares,
+            placed_at=pos.opened_at,
+            settled_at=pos.settled_at,
+            payout=pos.payout,
+            resolution=market.resolution,
+            current_value=values.get(pos.id),
+            estimated_win_probability=win_probability(pos.side, decision),
+        )
+        for pos, market, decision in rows
+    ]
+    counts = repo.decision_status_counts(session, simulation_id)
+    funnel = DecisionFunnel(
+        total=sum(counts.values()),
+        simulated=counts.get(ExecutionStatus.SIMULATED.value, 0),
+        rejected=counts.get(ExecutionStatus.REJECTED.value, 0),
+        no_trade=counts.get(ExecutionStatus.NOT_EXECUTED.value, 0),
+    )
+    return betting_stats(records, funnel)
 
 
 MANUAL_STRATEGY = "MANUAL"

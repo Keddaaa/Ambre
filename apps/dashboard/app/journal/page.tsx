@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
+import { DecisionJustification } from "@/components/decision-justification";
 import { Pager, useClampOffset } from "@/components/pager";
 import { QueryState } from "@/components/state";
 import { signClass } from "@/components/stat";
@@ -91,7 +92,8 @@ export default function JournalPage() {
                   const placed = d.execution_status === "SIMULATED";
                   const pnl = placed && d.payout !== null ? d.payout - d.stake : null;
                   return (
-                    <TableRow key={d.decision_id}>
+                    <Fragment key={d.decision_id}>
+                    <TableRow>
                       <TableCell>{formatDateTime(d.created_at)}</TableCell>
                       <TableCell className="max-w-xs truncate">
                         <Link className="hover:underline" href={`/markets/${encodeURIComponent(d.market_id)}`}>
@@ -129,6 +131,12 @@ export default function JournalPage() {
                         {d.risk_reasons.join(" · ") || "—"}
                       </TableCell>
                     </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={14} className="whitespace-normal bg-muted/30">
+                        <DecisionJustification decision={d} />
+                      </TableCell>
+                    </TableRow>
+                    </Fragment>
                   );
                 })}
               </TableBody>

@@ -4,6 +4,8 @@
 
 ### Ajouté
 
+- Page Statistiques du dashboard et `GET /stats` : taux de réussite (IC de Wilson), mises, P&L réalisé et latent, séries, répartition par côté et prix d'entrée (`evaluation_engine/betting.py`). Justifications d'Ambre, à la première personne, sous chaque décision du Journal et sur la page Statistiques (`apps/dashboard/lib/justification.ts`). Citation des sources de chaque décision : page du marché et recherches connues avant la décision (`market_url`, `research_sources`).
+
 - Universal Research Engine : repli généraliste (GDELT) pour les marchés sans connecteur spécialisé, sujets partagés entre marchés, 12 états d'information persistants (`intel_market_state`, migration `0006`), file d'attente paginée par passe, rapport de couverture réconcilié (`ambre coverage`), mémorisation des recherches dans le Cognitive Vault, domaines `HEALTH` et `CRYPTO`. Voir `docs/UNIVERSAL_RESEARCH.md` et ADR-015.
 
 - Planificateur de recherche persistant (`intel_jobs`, `intel_job_runs`, migration `0005`) branché dans `ambre worker` : intervalle configurable, bail, créneau unique, arrêt d'urgence sans consommer l'occasion, reprise après plantage, recul après échec, journal. `ambre scheduler-status`. ADR-014.

@@ -20,6 +20,7 @@ describe("activeSection", () => {
     expect(activeSection("/").id).toBe("pilotage");
     expect(activeSection("/markets/abc").id).toBe("pilotage");
     expect(activeSection("/evaluation").id).toBe("analyse");
+    expect(activeSection("/stats").id).toBe("analyse");
     expect(activeSection("/settings").id).toBe("systeme");
   });
 
@@ -30,6 +31,6 @@ describe("activeSection", () => {
   it("lists every page exactly once", () => {
     const hrefs = NAV_SECTIONS.flatMap((s) => s.links.map((l) => l.href));
     expect(new Set(hrefs).size).toBe(hrefs.length);
-    expect(hrefs).toEqual(["/", "/markets", "/journal", "/evaluation", "/settings"]);
+    expect(hrefs).toEqual(["/", "/markets", "/journal", "/stats", "/evaluation", "/settings"]);
   });
 });

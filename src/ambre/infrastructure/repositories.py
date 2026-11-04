@@ -18,6 +18,7 @@ from ambre.infrastructure.orm import (
     IgnoredMarketRow,
     MarketRow,
     PortfolioSnapshotRow,
+    PositionRow,
     PriceHistoryStateRow,
     PricePointRow,
     SimulationRow,
@@ -338,6 +339,30 @@ def latest_portfolio_snapshot(session: Session, simulation_id: str) -> Portfolio
         .order_by(PortfolioSnapshotRow.at.desc(), PortfolioSnapshotRow.id.desc())
         .limit(1)
     ).first()
+
+
+def bets_of_simulation(
+    session: Session, simulation_id: str
+) -> list[tuple[PositionRow, MarketRow, DecisionRow | None]]:
+    """Every position of a simulation with its market and the decision that opened it."""
+    rows = session.execute(
+        select(PositionRow, MarketRow, DecisionRow)
+        .join(MarketRow, MarketRow.id == PositionRow.market_id)
+        .outerjoin(DecisionRow, DecisionRow.decision_id == PositionRow.decision_id)
+        .where(PositionRow.simulation_id == simulation_id)
+        .order_by(PositionRow.id)
+    ).all()
+    return [(pos, market, decision) for pos, market, decision in rows]
+
+
+def decision_status_counts(session: Session, simulation_id: str) -> dict[str, int]:
+    """Number of journaled decisions per execution status."""
+    rows = session.execute(
+        select(DecisionRow.execution_status, func.count())
+        .where(DecisionRow.simulation_id == simulation_id)
+        .group_by(DecisionRow.execution_status)
+    ).all()
+    return {status: count for status, count in rows}
 
 
 def resolved_decision_scores(
