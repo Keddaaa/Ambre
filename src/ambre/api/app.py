@@ -2,7 +2,8 @@
 
 Write endpoints: POST /control/halt, /control/resume, /control/run-cycle and /orders
 (a manual PAPER order, tagged USER or CLAUDE and checked by the risk engine). None of
-them calls Manifold, and no route can change the execution mode.
+them calls Manifold, and no route can change the execution mode. Every write goes through
+``WriteGuard`` and every request through the Host check; the API must stay on loopback.
 """
 
 from collections.abc import Callable, Iterator
@@ -15,14 +16,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ambre import __version__
 from ambre.api import schemas as sc
+from ambre.api.security import WriteGuard
 from ambre.config.settings import Settings, get_settings
 from ambre.data_engine.sync import SYNC_KEY
 from ambre.domain.models import Action, Actor, Side, StrategyName
 from ambre.execution_engine.executor import ExecutionModeNotAvailable
 from ambre.infrastructure import repositories as repo
+from ambre.infrastructure import worker_lease
 from ambre.infrastructure.db import make_engine, make_session_factory
 from ambre.infrastructure.orm import DecisionRow, MarketRow
 from ambre.intelligence.store import ResearchSource, market_research_sources
@@ -81,6 +85,9 @@ def create_app(
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
+    # The last one added runs first: Host, then the write guard, then CORS.
+    app.add_middleware(WriteGuard, allowed_origins=cfg.cors_origins)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=cfg.api_allowed_hosts)
 
     def current_sim_id(session: Session) -> str | None:
         sim = repo.get_current_simulation(session)
@@ -337,12 +344,17 @@ def create_app(
 
     @app.post("/control/run-cycle", response_model=sc.CycleOut)
     def run_cycle_now(session: Db) -> sc.CycleOut:
-        """One paper decision cycle on the data already stored (no Manifold call)."""
+        """One paper decision cycle on the data already stored (no Manifold call).
+
+        It takes the worker's lease: never two cycles on one database at the same time."""
         try:
-            report = run_cycle(session, cfg, clock())
+            with worker_lease.exclusive(factory(), clock()):
+                report = run_cycle(session, cfg, clock())
+                session.commit()
+        except worker_lease.LeaseBusy as exc:
+            raise HTTPException(409, str(exc)) from exc
         except ExecutionModeNotAvailable as exc:
             raise HTTPException(409, str(exc)) from exc
-        session.commit()
         data = asdict(report)
         data["survival_state"] = report.survival_state.value
         return sc.CycleOut.model_validate(data)

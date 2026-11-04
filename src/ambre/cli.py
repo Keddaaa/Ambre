@@ -675,7 +675,12 @@ def main(
             _emit(asdict(report))
             return 0 if report.completed else 1
         if args.command == "cycle":
-            _emit(_cycle_dict(cycle_once(settings, factory, clock)))
+            try:
+                with worker_lease.exclusive(factory, clock()):
+                    _emit(_cycle_dict(cycle_once(settings, factory, clock)))
+            except worker_lease.LeaseBusy as exc:
+                logger.error("%s: not running", exc)
+                return 3
             return 0
         if args.command == "worker":
             return worker(

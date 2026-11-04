@@ -46,7 +46,7 @@ def populated(factory: sessionmaker[Session]) -> sessionmaker[Session]:
 
 
 def client_for(factory: sessionmaker[Session], settings: Settings = SETTINGS) -> TestClient:
-    return TestClient(create_app(settings, factory, clock=lambda: NOW))
+    return TestClient(create_app(settings, factory, clock=lambda: NOW), base_url="http://localhost")
 
 
 def test_health_ok(populated: sessionmaker[Session]) -> None:
@@ -291,7 +291,7 @@ def test_halt_requires_reason(populated: sessionmaker[Session]) -> None:
     c = client_for(populated)
     assert c.post("/control/halt", json={"reason": "ab"}).status_code == 422
     assert c.post("/control/halt", json={}).status_code == 422
-    assert c.post("/control/halt").status_code == 422
+    assert c.post("/control/halt").status_code == 415  # no JSON content type: the guard refuses
     assert c.post("/control/halt", json={"reason": "   "}).status_code == 422
     assert c.post("/control/halt", json={"reason": " ab "}).status_code == 422
 

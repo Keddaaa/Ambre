@@ -11,11 +11,15 @@ found still open when a new worker starts ended without a clean stop: it is clos
 """
 
 import logging
+import os
 import signal
-from collections.abc import Callable
+import socket
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -26,6 +30,7 @@ from ambre.infrastructure.orm import WorkerLeaseRow, WorkerRunRow
 logger = logging.getLogger(__name__)
 
 LEASE_NAME = "worker"
+ONE_SHOT_TTL_SECONDS = 900.0
 CLEAN_STOP = "stopped (signal or Ctrl-C)"
 INTERRUPTED = "interrupted: the process ended without a clean stop"
 
@@ -93,6 +98,24 @@ def release(factory: sessionmaker[Session], holder: str, name: str = LEASE_NAME)
         if row is not None and row.holder == holder:
             s.delete(row)
             s.commit()
+
+
+class LeaseBusy(Exception):
+    """A worker or another one-shot cycle is running on this database."""
+
+
+@contextmanager
+def exclusive(
+    factory: sessionmaker[Session], now: datetime, ttl: float = ONE_SHOT_TTL_SECONDS
+) -> Iterator[None]:
+    """Hold the worker's lease for a single cycle started outside the worker loop."""
+    holder = f"one-shot:{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:8]}"
+    if not acquire(factory, holder, now, ttl):
+        raise LeaseBusy("a cycle is already running on this database")
+    try:
+        yield
+    finally:
+        release(factory, holder)
 
 
 @dataclass(frozen=True)
@@ -213,6 +236,9 @@ SigtermHandler = Callable[[int, Any], Any] | int | None
 
 
 def _raise_interrupt(_signum: int, _frame: Any) -> None:
+    # One stop is enough. A supervisor and ``uv run`` can each send SIGTERM: a second one raised
+    # during the cleanup left the run unjournaled and the lease held for its whole TTL.
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
     raise KeyboardInterrupt  # handled by the worker loop exactly like Ctrl-C
 
 

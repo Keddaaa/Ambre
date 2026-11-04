@@ -176,6 +176,27 @@ def test_sigterm_becomes_a_clean_stop() -> None:
         lease.restore_sigterm_handler(previous)
 
 
+def test_a_second_sigterm_cannot_interrupt_the_cleanup() -> None:
+    """Seen on 2026-11-04: two SIGTERMs, the second inside ``stop_run``, and a lease left held."""
+    previous = lease.install_sigterm_handler()
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            os.kill(os.getpid(), signal.SIGTERM)
+        os.kill(os.getpid(), signal.SIGTERM)  # ignored: nothing is raised during the cleanup
+        assert signal.getsignal(signal.SIGTERM) == signal.SIG_IGN
+    finally:
+        lease.restore_sigterm_handler(previous)
+
+
+def test_a_one_shot_cycle_is_refused_while_the_lease_is_held(db_url: str) -> None:
+    factory = make_session_factory(make_engine(db_url))
+    assert cli.main(["init-db"]) == 0
+    assert lease.acquire(factory, "host:1", datetime.now(UTC), 600.0)
+    assert cli.main(["cycle"]) == 3
+    with factory() as s:
+        assert s.scalar(select(WorkerLeaseRow.holder)) == "host:1"
+
+
 # ------------------------------------------------------------------ health
 
 

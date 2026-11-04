@@ -94,7 +94,11 @@ def test_api_evaluation_route(populated: sessionmaker[Session]) -> None:
         a, *_ = _decided_markets(s)
         _resolve(s, a, "YES", T_CYCLE + timedelta(hours=1))
         s.commit()
-    body = TestClient(create_app(SETTINGS, populated)).get("/evaluation").json()
+    body = (
+        TestClient(create_app(SETTINGS, populated), base_url="http://localhost")
+        .get("/evaluation")
+        .json()
+    )
     assert body["n"] == 1
     assert body["sufficient_sample"] is False
     assert body["brier_difference_ci95"] is None
@@ -102,7 +106,7 @@ def test_api_evaluation_route(populated: sessionmaker[Session]) -> None:
 
 
 def test_api_evaluation_without_simulation_is_404(factory: sessionmaker[Session]) -> None:
-    r = TestClient(create_app(SETTINGS, factory)).get("/evaluation")
+    r = TestClient(create_app(SETTINGS, factory), base_url="http://localhost").get("/evaluation")
     assert r.status_code == 404
 
 

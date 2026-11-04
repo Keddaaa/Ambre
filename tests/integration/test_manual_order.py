@@ -140,7 +140,7 @@ def test_ambre_decisions_keep_the_ambre_actor(factory: sessionmaker[Session]) ->
 
 
 def client(factory: sessionmaker[Session]) -> TestClient:
-    return TestClient(create_app(SETTINGS, factory, clock=lambda: NOW))
+    return TestClient(create_app(SETTINGS, factory, clock=lambda: NOW), base_url="http://localhost")
 
 
 def body(mid: str, p: float, **kw: object) -> dict[str, object]:
@@ -185,7 +185,7 @@ def test_api_order_unknown_market_is_404_with_the_api_prefix(
 
 
 def test_api_run_cycle_reports_counts(factory: sessionmaker[Session]) -> None:
-    r = client(factory).post("/control/run-cycle")
+    r = client(factory).post("/control/run-cycle", json={})
     assert r.status_code == 200, r.text
     out = r.json()
     assert out["survival_state"] in {"BALANCED", "DEFENSIVE", "OBSERVING", "HALTED"}
