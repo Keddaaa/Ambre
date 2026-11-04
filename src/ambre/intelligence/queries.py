@@ -115,6 +115,13 @@ class Topic:
     domain: MarketDomain
     primary: str | None
     terms: tuple[str, ...]
+    #: The market's other named actors ("Taiwan" next to "China"). A headline about the primary
+    #: entity alone may be another story, so these decide relevance (see ``topic_relevant``).
+    companions: tuple[str, ...] = ()
+
+
+#: Shorter names ("US", "USA", "EU") are backdrop more often than actors of the story.
+MIN_COMPANION_LENGTH = 4
 
 
 def _content_terms(analysis: ResolutionAnalysis, primary: str | None) -> tuple[str, ...]:
@@ -155,7 +162,10 @@ def topic_for(analysis: ResolutionAnalysis) -> Topic | None:
     terms = _content_terms(analysis, primary)
     domain = analysis.domain.value.lower()
     if primary is not None:
-        return Topic(f"{domain}|{primary.lower()}", analysis.domain, primary, terms)
+        companions = tuple(
+            e for e in analysis.entities if e != primary and len(e) >= MIN_COMPANION_LENGTH
+        )
+        return Topic(f"{domain}|{primary.lower()}", analysis.domain, primary, terms, companions)
     significant = tuple(t for t in terms if len(t) >= MIN_ENTITYLESS_WORD)
     if len(significant) < 2:
         return None
@@ -185,11 +195,15 @@ def _has(text: str, word: str) -> bool:
 #: about a stock closing below a price), so they never decide relevance on their own.
 GENERIC_TERMS = frozenset(
     {
-        "above", "again", "another", "anyday", "below", "between", "close", "closed", "closes",
-        "during", "ever", "every", "exceed", "exceeds", "least", "less", "reach", "reaches",
-        "than", "through", "times", "under", "until", "within",
+        "above", "again", "another", "anyday", "below", "between", "center", "close", "closed",
+        "closes", "during", "ever", "every", "exceed", "exceeds", "least", "less", "reach",
+        "reaches", "than", "through", "times", "under", "until", "within",
     }
 )  # fmt: skip
+
+
+#: A market described by this many terms shares one with almost any headline on its entity.
+MANY_TERMS = 4
 
 
 def _specific_terms(terms: Sequence[str], *, at_least: int) -> Sequence[str]:
@@ -212,13 +226,21 @@ def topic_relevant(title: str, topic: Topic) -> bool:
     """Is an article title about this market's topic? The entity must be present together with
     one of the market's own subject terms; without an entity, at least two terms must appear.
     A generic condition word (see ``GENERIC_TERMS``) does not count when the market has
-    subject terms of its own."""
+    subject terms of its own. When the market names other actors, one of them or two of its
+    terms (its only term, if it has one) must appear too: "China" and a shared verb do not tie
+    a rocket launch to Taiwan. A market with many terms also needs two of them."""
     if not title.strip():
         return False
     if topic.primary is not None:
         if not _has(title, topic.primary):
             return False
         terms = _specific_terms(topic.terms, at_least=1)
-        return not terms or any(_mentions(title, t) for t in terms)
+        hits = sum(1 for t in terms if _mentions(title, t))
+        if topic.companions:
+            enough_terms = bool(terms) and hits >= min(2, len(terms))
+            return enough_terms or any(_has(title, c) for c in topic.companions)
+        if len(terms) >= MANY_TERMS:
+            return hits >= 2
+        return not terms or hits >= 1
     terms = _specific_terms(topic.terms, at_least=2)
     return sum(1 for t in terms if _has(title, t)) >= 2

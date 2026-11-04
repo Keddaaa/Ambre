@@ -127,3 +127,55 @@ def test_entityless_topics_count_only_specific_terms() -> None:
     t = _topic(None, "rocket", "close", "engine")
     assert topic_relevant("new rocket engine passes a test", t)
     assert not topic_relevant("rocket maker will close its plant", t)  # 'rocket' + generic 'close'
+
+
+def test_a_sentence_opening_word_is_not_an_entity() -> None:
+    _, t = topic("This market resolves YES when an artificial agent joins a board of directors")
+    assert t is not None
+    assert t.primary not in ("This", "YES")
+
+
+def test_a_second_actor_of_the_market_is_kept_as_a_companion() -> None:
+    _, t = topic("Will China launch a full-scale invasion of Taiwan by the end of 2028?")
+    assert t is not None and t.primary == "China"
+    assert t.companions == ("Taiwan",)
+
+
+def test_a_short_place_name_does_not_become_a_required_companion() -> None:
+    _, t = topic("Will China land men on the moon before the USA?")
+    assert t is not None and t.companions == ()
+    assert topic_relevant("China releases timeline for a landing on the Moon", t)
+
+
+def test_the_primary_entity_alone_is_not_enough_when_the_market_names_another() -> None:
+    _, t = topic("Will China buy the H200 from NVIDIA")
+    assert t is not None
+    assert not topic_relevant("China releases timeline for lunar landing on the Moon", t)
+    assert topic_relevant("China approves imports of Nvidia chips", t)
+
+
+def test_a_shared_verb_does_not_tie_two_different_stories() -> None:
+    _, t = topic("Will China launch a full-scale invasion of Taiwan by the end of 2028?")
+    assert t is not None
+    assert not topic_relevant("Falcon 9 and China to launch new missions this week", t)
+    assert topic_relevant("Taiwan drills as China masses ships in the strait", t)
+
+
+def test_two_of_the_market_s_terms_can_stand_in_for_the_companion() -> None:
+    _, t = topic("Will Kevin Kiley win the House race in California?")
+    assert t is not None and t.primary == "Kevin Kiley"
+    assert topic_relevant("Kevin Kiley set to win tight race", t)
+    assert not topic_relevant("Kevin Kiley will win an award", t)
+
+
+def test_a_shared_release_verb_does_not_tie_ai_rules_to_a_moon_timeline() -> None:
+    _, t = topic("Will China restrict the open release of frontier AI models above a threshold?")
+    assert t is not None
+    assert not topic_relevant("China releases timeline for lunar landing on the Moon", t)
+    assert topic_relevant("China to restrict frontier AI models under new rules", t)
+
+
+def test_a_place_called_space_center_is_not_a_data_center_in_space() -> None:
+    _, t = topic("Will there be a functional 100MW data center in space before 2030?")
+    assert t is not None
+    assert not topic_relevant("Happy 65 Years: NASA's Johnson Space Center Then and Now", t)

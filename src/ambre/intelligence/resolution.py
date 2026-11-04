@@ -301,7 +301,7 @@ def _period(question: str, ambiguities: list[str]) -> EventPeriod | None:
 _STOP_FIRST = {
     "Will", "Is", "Are", "Does", "Do", "Did", "Has", "Have", "Can", "Could", "Would", "Who",
     "What", "When", "Which", "If", "By", "In", "On", "Before", "After", "The", "A", "An",
-    "According", "Per", "Any", "At",
+    "According", "Per", "Any", "At", "This", "That", "These", "Those", "YES", "NO",
 }  # fmt: skip
 _MONTH_WORDS = {m.capitalize() for m in _MONTHS} | {
     d for d in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
