@@ -226,17 +226,15 @@ Limite : la couverture est celle de l'espace. Elle ne sert que les marchés qui 
 
 ### Flux RSS d'éditeurs — `bbc_news_world`, `guardian_world`, `dw_top_stories` (NON ACTIVÉS)
 
-L'adaptateur générique (`providers/feed.py`, connecteur `rss_feed`, requêtes conditionnelles `ETag` / `If-Modified-Since`) existe et est testé hors ligne sur des flux écrits à la main. **Aucun flux d'éditeur n'est activé** : le registre refuse d'activer un fournisseur dont le statut est `UNVERIFIED`, et les conditions d'usage n'ont pas pu être confirmées le 2026-11-02.
+Lecture du 2026-11-04. Ambre relèverait ces flux par programme, garderait titres et métadonnées, et les rapprocherait de marchés par un traitement automatique. Aucune autorisation ne couvre cet usage : les trois flux restent `UNVERIFIED` et désactivés, et ne s'activent pas sans autorisation écrite de l'éditeur.
 
-| Éditeur | Ce qui a été tenté | Ce qui est établi | Décision |
+| Éditeur | Document officiel | Restrictions relevées | Conséquence |
 |---|---|---|---|
-| BBC | page des conditions des flux : accès refusé par l'outil de lecture ; recherche web | sources indirectes et anciennes seulement : usage limité à un site personnel en 2008, puis flux « encouragés » avec attribution « BBC News » ; **conditions actuelles non confirmées** | `UNVERIFIED`, désactivé |
-| The Guardian | page des flux : accès refusé ; recherche web | miroir tiers de ses conditions : usage personnel et non commercial, robots et scrapers soumis à accord ; **règle propre aux flux non confirmée** | `UNVERIFIED`, désactivé |
-| Deutsche Welle | page des flux : accès refusé ; recherche web | **rien** de DW lui-même | `UNVERIFIED`, désactivé |
+| BBC | [Terms of Use](https://www.bbc.co.uk/usingthebbc/terms-of-use/), [robots.txt](https://www.bbc.co.uk/robots.txt) | Section 15 : « You're not allowed to pluck metadata from our content or RSS feeds ». Permission requise pour tout contenu prélevé « to develop or train artificial intelligence or to do computer analysis ». Un flux peut s'afficher sur un site, sans modification, avec crédit et marque. `robots.txt` interdit `/` à `ClaudeBot`, `anthropic-ai` et `CCBot`. | Usage prévu non couvert. |
+| The Guardian | [Terms of service](https://www.theguardian.com/help/terms-of-service), [Open Platform](https://open-platform.theguardian.com/access/) | Usage personnel et non commercial seulement. Sans accord écrit, interdiction de copier, extraire ou collecter le contenu et ses métadonnées pour l'apprentissage automatique ou l'IA, pour l'agrégation, l'analyse ou la fouille de textes et de données. Robots, crawlers et tout outil automatisé interdits sur le site et le contenu. La clé non commerciale de l'Open Platform vise par exemple les mémoires et les hackathons ; l'IA générative et la fouille relèvent de la clé commerciale. | Usage prévu non couvert. Une voie existe peut-être par l'Open Platform : à demander à l'éditeur, pas à supposer. |
+| Deutsche Welle | [Legal notice](https://www.dw.com/en/legal-notice/a-63500643) | Le texte récupéré ne contient aucune clause sur les flux, l'automatisation ou l'IA. Cela ne vaut pas autorisation : les conditions propres aux flux n'ont pas été trouvées, et `robots.txt` n'a pas répondu. | Conditions inconnues : `UNKNOWN`, désactivé. |
 
-Les adresses des flux dans `configs/providers.yaml` sont celles que ces éditeurs annoncent habituellement ; elles n'ont pas été interrogées. Pour activer un flux, le propriétaire doit lire les conditions de l'éditeur, compléter cette fiche (usage permis, stockage, attribution), passer le statut à `VERIFIED_*` et fournir un budget interne.
-
-## Candidats non vérifiés
+Ces lignes résument des pages lues à une date donnée ; ce n'est pas un avis juridique. Pages BBC et Guardian relevées par `curl` avec un en-tête de navigateur, page DW avec `ambre-terms-review`. Ne pas refaire ce relevé par robot sur la BBC : son `robots.txt` l'interdit aux agents d'Anthropic.
 
 Fournisseurs du catalogue du propriétaire pour lesquels **aucune fiche n'a été complétée** : Marketaux, finlight, NewsData.io, GNews, NewsAPI, The Guardian, FRED, ECB, Eurostat, World Bank, SEC EDGAR, CoinGecko, Mastodon, Reddit, YouTube Data API, Google Trends, TwitterAPI.io, TheSportsDB, football-data.org, API-Football, OpenLigaDB, StatsBomb Open Data, OpenF1, Jolpica F1, NOAA, Meteostat, NASA POWER, OpenWeatherMap, MET Norway, ACLED, ReliefWeb, HDX, OpenAlex, arXiv, Crossref, WHO GHO, CDC, NASA Open APIs.
 

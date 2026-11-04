@@ -115,10 +115,10 @@ providers:
     capabilities: {news_feed: 0.5}
 
   # Publisher feeds: the adapter exists (connector rss_feed) but NO feed may be switched on until
-  # the publisher's terms for this use are verified and written in docs/API_CATALOG.md. On
-  # 2026-11-02 the terms pages could not be read (access refused), so each stays UNVERIFIED and
-  # the registry refuses to enable it. The addresses are the ones the publishers advertise and
-  # have not been fetched.
+  # an authorisation covering this use is obtained and written in docs/API_CATALOG.md. The terms
+  # read on 2026-11-04 restrict automated collection, metadata extraction and AI uses (BBC,
+  # Guardian); DW's are not established. Each stays UNVERIFIED, and the registry refuses to enable
+  # it. The addresses are the ones the publishers advertise and have not been fetched.
   bbc_news_world:
     name: BBC News - World (RSS)
     domain: news

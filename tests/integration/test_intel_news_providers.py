@@ -9,6 +9,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from ambre.config.settings import Settings
 from ambre.intelligence.models import ProviderCard, ResultKind
 from ambre.intelligence.providers.feed import FeedProvider
 from ambre.intelligence.providers.spaceflight_news import (
@@ -166,3 +167,9 @@ def test_the_publisher_feeds_in_the_registry_stay_off_until_their_terms_are_veri
     assert all(not c.enabled and c.status.value == "UNVERIFIED" for c in feeds)
     snapi_card = registry.get("spaceflight_news")
     assert snapi_card is not None and snapi_card.enabled and snapi_card.provides  # verified API
+
+
+@pytest.mark.parametrize("provider", ["bbc_news_world", "guardian_world", "dw_top_stories"])
+def test_publisher_feeds_stay_disabled_without_an_authorisation(provider: str) -> None:
+    card = load_registry(Settings().providers_path).get(provider)
+    assert card is not None and card.enabled is False

@@ -2,6 +2,7 @@
 
 import json
 import os
+import plistlib
 import signal
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -195,6 +196,18 @@ def test_a_one_shot_cycle_is_refused_while_the_lease_is_held(db_url: str) -> Non
     assert cli.main(["cycle"]) == 3
     with factory() as s:
         assert s.scalar(select(WorkerLeaseRow.holder)) == "host:1"
+
+
+@pytest.mark.parametrize("name", ["worker", "api", "dashboard"])
+def test_the_supervised_services_stay_on_loopback_and_stop_cleanly(name: str) -> None:
+    with (ROOT / "deploy" / "launchd" / f"com.ambre.{name}.plist").open("rb") as f:
+        service = plistlib.load(f)
+    command = " ".join(service["ProgramArguments"])
+    assert service["KeepAlive"] is True and service["ExitTimeOut"] >= 30
+    assert "uv run" not in command  # ``uv run`` relays signals: the worker must get just one
+    assert "0.0.0.0" not in command
+    if name != "worker":
+        assert "127.0.0.1" in command
 
 
 # ------------------------------------------------------------------ health

@@ -2,6 +2,23 @@
 
 ## Non publié (0.2 en cours)
 
+### Sécurité
+
+- Écritures de l'API protégées : `Origin` autorisée, `application/json` obligatoire, `Host` de bouclage seulement (ADR-020). Le CSRF sur `POST /control/run-cycle` est corrigé.
+- `logswsl.txt` n'est plus suivi par Git. Il reste dans l'historique jusqu'à sa réécriture (`docs/SECURITY.md`).
+
+### Corrigé
+
+- Rapprochement titre / marché : un autre acteur nommé par le marché, ou ses termes, doit figurer dans le titre ; un marché d'au moins 4 termes en exige deux. « This » et « YES » ne sont plus des entités.
+- Un second SIGTERM interrompait l'arrêt du worker : run non journalisé et bail conservé jusqu'à expiration. Il est désormais ignoré.
+- `/control/run-cycle` et `ambre cycle` prennent le bail du worker : plus de double cycle sur une base.
+
+### Ajouté (exploitation)
+
+- `ambre relink [--apply]` et migration `0011` : invalidation tracée des liens (ADR-021).
+- Modèles `launchd` non chargés (`deploy/launchd/`), procédure dans `docs/SECURITY.md`.
+- Audit des dix premiers paris réglés : `docs/AUDIT_PARIS_2026-11-04.md`.
+
 ### Ajouté
 
 - Page Statistiques du dashboard et `GET /stats` : taux de réussite (IC de Wilson), mises, P&L réalisé et latent, séries, répartition par côté et prix d'entrée (`evaluation_engine/betting.py`). Justifications d'Ambre, à la première personne, sous chaque décision du Journal et sur la page Statistiques (`apps/dashboard/lib/justification.ts`). Citation des sources de chaque décision : page du marché et recherches connues avant la décision (`market_url`, `research_sources`).

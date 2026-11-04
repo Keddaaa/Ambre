@@ -15,7 +15,7 @@ Contexte d'usage d'AMBRE : projet personnel de recherche en simulation (Mana vir
 | Bluesky | non lues : UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN |
 | Manifold | conditions de service ; **entraînement commercial sur les données de l'API : licence requise** (contact `data@manifold.markets`) ; non commercial et recherche permis | licence requise pour entraîner | UNKNOWN | recherche et usage personnel permis | pas de scraping hors API, pas de contournement des limites |
 | Spaceflight News API | « fully free to use for everyone » (FAQ) ; **aucune licence ni condition de stockage publiée pour les données d'articles** : UNKNOWN | oui (soutien demandé) | UNKNOWN | UNKNOWN | nommer l'éditeur de chaque article ; AMBRE ne stocke que titre, résumé court et lien |
-| BBC, The Guardian, Deutsche Welle (flux RSS) | **non confirmées** (pages inaccessibles le 2026-11-02 ; sources indirectes : usage personnel ou non commercial, attribution) | UNKNOWN | UNKNOWN | UNKNOWN | flux désactivés tant que les conditions ne sont pas lues |
+| BBC, The Guardian, Deutsche Welle (flux RSS) | **usage prévu non autorisé** (BBC, Guardian) ou inconnu (DW) ; voir `API_CATALOG.md`, relevé du 2026-11-04 | non | non | non | non |
 
 Conséquences pour la conception :
 

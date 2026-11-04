@@ -9,3 +9,4 @@ var/
 __pycache__/
 node_modules/
 .next/
+logswsl.txt

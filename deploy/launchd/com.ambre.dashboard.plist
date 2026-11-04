@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.ambre.dashboard</string>
+  <key>WorkingDirectory</key><string>__ROOT__/apps/dashboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>exec npm run start -- -H 127.0.0.1 -p 3000</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>ExitTimeOut</key><integer>60</integer>
+  <key>StandardOutPath</key><string>__ROOT__/var/logs/dashboard.log</string>
+  <key>StandardErrorPath</key><string>__ROOT__/var/logs/dashboard.log</string>
+</dict>
+</plist>

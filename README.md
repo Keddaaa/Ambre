@@ -59,7 +59,7 @@ uv run ambre cycle
 uv run ambre worker --interval 300
 
 # Start the read-oriented API
-uv run uvicorn ambre.api.app:app --port 8000
+uv run uvicorn ambre.api.app:app --host 127.0.0.1 --port 8000
 
 # Run the test suite
 uv run pytest -q
@@ -70,7 +70,7 @@ Optional dashboard:
 ```bash
 cd apps/dashboard
 npm install
-npm run dev
+npm run dev -- -H 127.0.0.1
 ```
 
 - Dashboard: `http://localhost:3000`
