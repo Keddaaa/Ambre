@@ -38,7 +38,7 @@ function citeResearch(s: ResearchSource): CitedSource {
   return {
     label: s.title ?? s.provider_id,
     url: safeHttpUrl(s.url),
-    detail: `${s.provider_id} · ${trust}`,
+    detail: `${s.provider_id} · ${trust}${s.invalidated_at ? " · lien invalidé depuis" : ""}`,
   };
 }
 

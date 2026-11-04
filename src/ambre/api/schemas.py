@@ -93,6 +93,7 @@ class ResearchSourceOut(_Out):
     linked_at: datetime
     evidence_level: str
     usable_for_prediction: bool
+    invalidated_at: datetime | None = None
 
 
 class DecisionOut(_Out):

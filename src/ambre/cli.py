@@ -50,6 +50,12 @@ from ambre.intelligence.models import InfoNeed
 from ambre.intelligence.news_ingest import ingest_news
 from ambre.intelligence.planning import load_gazetteer
 from ambre.intelligence.registry import load_registry
+from ambre.intelligence.resolution import load_rules
+from ambre.intelligence.revalidation import (
+    LINK_RULE_VERSION,
+    invalidate_links,
+    review_news_links,
+)
 from ambre.intelligence.scheduler import JobSpec, tick
 from ambre.intelligence.scheduler import status as scheduler_status
 from ambre.intelligence.service import research_pass
@@ -135,6 +141,27 @@ def sync_once(
             await client.aclose()
 
     return asyncio.run(_run())
+
+
+def relink_once(
+    settings: Settings, factory: sessionmaker[Session], clock: Clock, apply: bool
+) -> dict[str, Any]:
+    """Review every active news link; only ``apply`` writes, and only the invalidation columns."""
+    now = clock()
+    gazetteer = load_gazetteer(settings.gazetteer_path)
+    with factory() as session:
+        reviews = review_news_links(session, now, gazetteer, load_rules())
+        invalidated = invalidate_links(session, reviews, now) if apply else 0
+        session.commit()
+    return {
+        "rule": LINK_RULE_VERSION,
+        "applied": apply,
+        "reviewed": len(reviews),
+        "kept": sum(1 for r in reviews if r.keep),
+        "to_invalidate": sum(1 for r in reviews if not r.keep),
+        "invalidated": invalidated,
+        "links": [asdict(r) for r in reviews],
+    }
 
 
 def cycle_once(settings: Settings, factory: sessionmaker[Session], clock: Clock) -> CycleReport:
@@ -628,6 +655,10 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "news-ingest", help="poll every enabled news feed once and associate it with the markets"
     )
+    relink = sub.add_parser(
+        "relink", help="review stored news links under the current rule (a dry run by default)"
+    )
+    relink.add_argument("--apply", action="store_true", help="flag the links that no longer match")
     export = sub.add_parser("vault-export", help="export the Cognitive Vault as Markdown files")
     export.add_argument("--dir", required=True, type=Path)
     sub.add_parser("evaluate", help="Brier, log loss and calibration on resolved markets")
@@ -707,6 +738,9 @@ def main(
             return 0
         if args.command == "news-ingest":
             _emit(news_once(settings, factory, clock, http_factory))
+            return 0
+        if args.command == "relink":
+            _emit(relink_once(settings, factory, clock, args.apply))
             return 0
         if args.command == "scheduler-status":
             _emit(scheduler_snapshot(factory))

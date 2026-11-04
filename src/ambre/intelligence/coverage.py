@@ -25,6 +25,7 @@ from ambre.intelligence.orm import (
 )
 from ambre.intelligence.registry import load_registry
 from ambre.intelligence.states import MarketInfoState
+from ambre.intelligence.store import active_link
 
 
 def _ratio(name: str, numerator: int, denominator: int, of: str) -> dict[str, Any]:
@@ -138,12 +139,20 @@ def _diagnostics(
                     )
                 ).all()
             },
-            "market_links": session.scalar(select(func.count()).select_from(IntelMarketLinkRow))
+            "market_links": session.scalar(
+                select(func.count()).select_from(IntelMarketLinkRow).where(active_link())
+            )
+            or 0,
+            "invalidated_links": session.scalar(
+                select(func.count())
+                .select_from(IntelMarketLinkRow)
+                .where(IntelMarketLinkRow.invalidated_at.is_not(None))
+            )
             or 0,
             "links_usable_for_prediction": session.scalar(
                 select(func.count())
                 .select_from(IntelMarketLinkRow)
-                .where(IntelMarketLinkRow.usable_for_prediction.is_(True))
+                .where(IntelMarketLinkRow.usable_for_prediction.is_(True), active_link())
             )
             or 0,
             "feature_journal_rows": session.scalar(

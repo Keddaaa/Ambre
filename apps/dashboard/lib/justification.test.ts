@@ -189,6 +189,11 @@ describe("decisionSources", () => {
       detail: "spaceflight_news · non vérifié",
     });
   });
+  it("flags a link found wrong after the decision", () => {
+    const invalidated = { ...research, invalidated_at: "2026-11-04T12:00:00Z" };
+    const [line] = decisionSources(decision({ research_sources: [invalidated] })).research;
+    expect(line.detail).toBe("spaceflight_news · non vérifié · lien invalidé depuis");
+  });
   it("keeps a source without title or safe link as plain text", () => {
     const [line] = decisionSources(
       decision({ research_sources: [{ ...research, title: null, url: "javascript:alert(1)" }] }),

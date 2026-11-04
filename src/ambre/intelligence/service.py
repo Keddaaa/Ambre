@@ -360,9 +360,9 @@ def _write_states(
     """Recompute and store the information state of every scanned market."""
     evidence = dict(
         session.execute(
-            select(IntelMarketLinkRow.market_id, func.count()).group_by(
-                IntelMarketLinkRow.market_id
-            )
+            select(IntelMarketLinkRow.market_id, func.count())
+            .where(store.active_link())
+            .group_by(IntelMarketLinkRow.market_id)
         ).all()
     )
     existing = {r.market_id: r for r in session.scalars(select(IntelMarketStateRow))}

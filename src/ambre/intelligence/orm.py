@@ -76,6 +76,10 @@ class IntelMarketLinkRow(Base):
     usable_for_prediction: Mapped[bool] = mapped_column(Boolean)
     reasons: Mapped[list[str]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    # A link found wrong is flagged, never deleted: decisions taken before keep their citation.
+    invalidated_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    invalidated_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    invalidated_by: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class IntelUsageRow(Base):

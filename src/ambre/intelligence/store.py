@@ -4,7 +4,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.orm import Session
 
 from ambre.intelligence.context import FeatureSet
@@ -132,6 +132,11 @@ def save_observation(session: Session, obs: Observation, request_id: str) -> boo
     return True
 
 
+def active_link() -> ColumnElement[bool]:
+    """Links that still count. ``save_link`` never revives an invalidated one."""
+    return IntelMarketLinkRow.invalidated_at.is_(None)
+
+
 def save_link(session: Session, link: MarketLink, now: datetime) -> bool:
     exists = session.scalar(
         select(IntelMarketLinkRow.id).where(
@@ -186,10 +191,20 @@ def market_observations(session: Session, market_id: str) -> list[Observation]:
             IntelMarketLinkRow,
             IntelMarketLinkRow.observation_id == IntelObservationRow.observation_id,
         )
-        .where(IntelMarketLinkRow.market_id == market_id)
+        .where(IntelMarketLinkRow.market_id == market_id, active_link())
         .order_by(IntelObservationRow.ingested_at, IntelObservationRow.observation_id)
     )
     return [observation_from_row(r) for r in rows]
+
+
+def active_observation_ids(session: Session, market_id: str) -> list[str]:
+    return list(
+        session.scalars(
+            select(IntelMarketLinkRow.observation_id).where(
+                IntelMarketLinkRow.market_id == market_id, active_link()
+            )
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -203,12 +218,14 @@ class ResearchSource:
     linked_at: datetime
     evidence_level: str
     usable_for_prediction: bool
+    invalidated_at: datetime | None = None
 
 
 def market_research_sources(
     session: Session, market_ids: Collection[str]
 ) -> dict[str, list[ResearchSource]]:
-    """Research linked to each market, latest link first."""
+    """Research linked to each market, latest link first, invalidated links included: a decision
+    taken before the invalidation still cites what it read."""
     if not market_ids:
         return {}
     rows = session.execute(
@@ -231,6 +248,7 @@ def market_research_sources(
                 linked_at=link.created_at,
                 evidence_level=link.evidence_level,
                 usable_for_prediction=link.usable_for_prediction,
+                invalidated_at=link.invalidated_at,
             )
         )
     return out

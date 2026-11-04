@@ -103,6 +103,7 @@ export interface ResearchSource {
   linked_at: string;
   evidence_level: string;
   usable_for_prediction: boolean;
+  invalidated_at?: string | null;
 }
 
 export interface Decision {

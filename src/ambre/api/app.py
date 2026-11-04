@@ -97,7 +97,12 @@ def create_app(
         out = sc.DecisionOut.model_validate(d)
         out.market_question = context.questions.get(d.market_id)
         out.market_url = context.urls.get(d.market_id)
-        known = [s for s in context.research.get(d.market_id, []) if s.linked_at <= d.created_at]
+        known = [
+            s
+            for s in context.research.get(d.market_id, [])
+            if s.linked_at <= d.created_at
+            and (s.invalidated_at is None or s.invalidated_at > d.created_at)
+        ]
         out.research_sources = [
             sc.ResearchSourceOut.model_validate(s) for s in known[:MAX_CITED_SOURCES]
         ]

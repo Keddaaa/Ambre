@@ -420,6 +420,51 @@ def decision_body(factory: sessionmaker[Session], market_id: str) -> dict[str, A
     return next(d for d in items if d["market_id"] == market_id)
 
 
+def test_a_decision_keeps_citing_what_it_read_after_the_link_is_invalidated(
+    populated: sessionmaker[Session],
+) -> None:
+    """History stays as it was: the citation remains, flagged, on the decision that saw it."""
+    market_id, decided_at = first_decision(populated)
+    linked_at = decided_at - timedelta(hours=1)
+    invalidated_at = decided_at + timedelta(hours=1)
+    link_research(populated, market_id, linked_at)
+    with populated() as s:
+        before = s.get(DecisionRow, first_decision_id(s))
+        assert before is not None
+        snapshot = {c.name: getattr(before, c.name) for c in DecisionRow.__table__.columns}
+        for link in s.scalars(select(IntelMarketLinkRow)):
+            link.invalidated_at = invalidated_at
+            link.invalidated_reason = "synthetic"
+            link.invalidated_by = "synthetic-rule"
+        s.commit()
+    [source] = decision_body(populated, market_id)["research_sources"]
+    assert source["invalidated_at"] is not None
+    with populated() as s:
+        after = s.get(DecisionRow, first_decision_id(s))
+        assert after is not None
+        assert {c.name: getattr(after, c.name) for c in DecisionRow.__table__.columns} == snapshot
+
+
+def test_a_decision_taken_after_the_invalidation_does_not_cite_the_link(
+    populated: sessionmaker[Session],
+) -> None:
+    market_id, decided_at = first_decision(populated)
+    link_research(populated, market_id, decided_at - timedelta(hours=2))
+    with populated() as s:
+        for link in s.scalars(select(IntelMarketLinkRow)):
+            link.invalidated_at = decided_at - timedelta(hours=1)
+            link.invalidated_reason = "synthetic"
+            link.invalidated_by = "synthetic-rule"
+        s.commit()
+    assert decision_body(populated, market_id)["research_sources"] == []
+
+
+def first_decision_id(s: Session) -> str:
+    row = s.scalars(select(DecisionRow)).first()
+    assert row is not None
+    return row.decision_id
+
+
 def test_decision_exposes_the_market_url(populated: sessionmaker[Session]) -> None:
     market_id, _ = first_decision(populated)
     with populated() as s:

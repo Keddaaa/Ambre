@@ -369,7 +369,7 @@ def news_metrics(
             IntelObservationRow,
             IntelObservationRow.observation_id == IntelMarketLinkRow.observation_id,
         )
-        .where(IntelObservationRow.provider_id.in_(feed_ids or [""]))
+        .where(IntelObservationRow.provider_id.in_(feed_ids or [""]), store.active_link())
     ).all()
     per_market: dict[str, set[str]] = defaultdict(set)
     per_article: dict[str, set[str]] = defaultdict(set)
@@ -392,6 +392,7 @@ def news_metrics(
                 .where(
                     IntelObservationRow.provider_id.in_(feed_ids or [""]),
                     IntelMarketLinkRow.usable_for_prediction.is_(True),
+                    store.active_link(),
                 )
             )
             or 0,
