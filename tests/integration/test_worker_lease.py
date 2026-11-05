@@ -182,8 +182,8 @@ def test_a_second_sigterm_cannot_interrupt_the_cleanup() -> None:
     previous = lease.install_sigterm_handler()
     try:
         with pytest.raises(KeyboardInterrupt):
-            os.kill(os.getpid(), signal.SIGTERM)
-        os.kill(os.getpid(), signal.SIGTERM)  # ignored: nothing is raised during the cleanup
+            signal.raise_signal(signal.SIGTERM)  # os.kill would end the process on Windows
+        signal.raise_signal(signal.SIGTERM)  # ignored: nothing is raised during the cleanup
         assert signal.getsignal(signal.SIGTERM) == signal.SIG_IGN
     finally:
         lease.restore_sigterm_handler(previous)

@@ -17,7 +17,7 @@
 
 - L'API n'authentifie personne. Elle se protège d'une page web hostile (CSRF, DNS rebinding), pas d'un processus local (ADR-020).
 - Routes d'écriture : `POST /control/halt`, `/control/resume`, `/control/run-cycle`, `/orders`. Aucune n'appelle Manifold ni ne change le mode d'exécution.
-- Toute écriture exige `application/json`, et une `Origin` présente doit figurer dans `CORS_ORIGINS` (par défaut `http://localhost:3000`). Toute requête doit porter un `Host` de `API_ALLOWED_HOSTS`.
+- Toute écriture exige `application/json`, et une `Origin` présente doit figurer dans `CORS_ORIGINS` (par défaut `http://localhost:3000` et `http://127.0.0.1:3000`). Toute requête doit porter un `Host` de `API_ALLOWED_HOSTS`.
 - À n'écouter que sur `127.0.0.1`. Le dashboard aussi : `next dev` et `next start` écoutent sur toutes les interfaces sans `-H 127.0.0.1`.
 
 ## Secret exposé : `logswsl.txt`

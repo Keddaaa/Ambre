@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from ambre.api.app import create_app
+from ambre.config.settings import Settings
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure import worker_lease
 from ambre.infrastructure.db import make_engine, make_session_factory
@@ -69,6 +70,20 @@ def write_routes() -> set[str]:
         for r in app.routes
         if UNSAFE & set(getattr(r, "methods", None) or set())
     }
+
+
+@pytest.mark.parametrize("origin", ["http://localhost:3000", "http://127.0.0.1:3000"])
+def test_the_dashboard_can_write_by_default_under_both_loopback_names(
+    factory: sessionmaker[Session], origin: str
+) -> None:
+    """The launchd template serves the dashboard on 127.0.0.1, the docs say localhost."""
+    default = Settings.model_fields["cors_origins"].default
+    settings = SETTINGS.model_copy(update={"cors_origins": default})
+    app = create_app(settings, factory, clock=lambda: NOW)
+    r = TestClient(app, base_url="http://localhost").post(
+        "/control/halt", json={"reason": "owner"}, headers={"Origin": origin}
+    )
+    assert r.status_code == 200
 
 
 def test_every_write_route_has_a_forged_body_here() -> None:

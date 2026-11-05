@@ -142,7 +142,7 @@ class Settings(BaseSettings):
     manifold_base_url: str = "https://api.manifold.markets"
     database_url: str = "sqlite:///./var/ambre.db"
     initial_capital: float = Field(default=1000.0, gt=0)
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     # Host headers the API answers to: a rebound DNS name reaches loopback under its own name.
     api_allowed_hosts: list[str] = ["localhost", "127.0.0.1"]
     max_markets_per_cycle: int = Field(default=200, gt=0)

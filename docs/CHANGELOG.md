@@ -12,6 +12,8 @@
 - Rapprochement titre / marché : un autre acteur nommé par le marché, ou ses termes, doit figurer dans le titre ; un marché d'au moins 4 termes en exige deux. « This » et « YES » ne sont plus des entités.
 - Un second SIGTERM interrompait l'arrêt du worker : run non journalisé et bail conservé jusqu'à expiration. Il est désormais ignoré.
 - `/control/run-cycle` et `ambre cycle` prennent le bail du worker : plus de double cycle sur une base.
+- `CORS_ORIGINS` accepte aussi `http://127.0.0.1:3000` par défaut : le modèle `launchd` sert le dashboard à cette adresse, et ses écritures recevaient un 403.
+- Le test du second SIGTERM utilise `signal.raise_signal` : `os.kill` terminait pytest sous Windows.
 
 ### Ajouté (exploitation)
 
