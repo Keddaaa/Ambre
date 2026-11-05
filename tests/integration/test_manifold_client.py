@@ -176,7 +176,13 @@ async def test_get_market_non_dict_rejected() -> None:
 
 async def test_client_is_read_only() -> None:
     public = {n for n in dir(ManifoldClient) if not n.startswith("_")}
-    assert public == {"list_markets", "get_market", "aclose"}
+    assert public == {
+        "list_markets",
+        "get_market",
+        "list_bets",
+        "search_resolved",
+        "aclose",
+    }  # every one is a GET
 
 
 async def test_aclose_closes_owned_client_only() -> None:
@@ -187,3 +193,31 @@ async def test_aclose_closes_owned_client_only() -> None:
     await injected.aclose()
     owned = ManifoldClient(BASE)
     await owned.aclose()
+
+
+# ------------------------------------------------------------------ bets (read-only history)
+
+
+async def test_list_bets_is_a_plain_get_with_the_market_and_cursor() -> None:
+    def handler(request: httpx.Request, _: int) -> httpx.Response:
+        return httpx.Response(200, json=[{"id": "b1"}])
+
+    rec = Recorder(handler)
+    client = make_client(rec)
+    assert await client.list_bets("m1", before="b9", limit=500) == [{"id": "b1"}]
+    request = rec.requests[0]
+    assert request.method == "GET" and request.url.path == "/v0/bets"
+    assert dict(request.url.params) == {"contractId": "m1", "limit": "500", "before": "b9"}
+
+
+@pytest.mark.parametrize("limit", [0, 1001])
+async def test_list_bets_rejects_an_out_of_range_limit(limit: int) -> None:
+    client = make_client(Recorder(lambda r, n: httpx.Response(200, json=[])))
+    with pytest.raises(ValueError):
+        await client.list_bets("m1", limit=limit)
+
+
+async def test_list_bets_refuses_a_body_that_is_not_a_list() -> None:
+    client = make_client(Recorder(lambda r, n: httpx.Response(200, json={"error": "x"})))
+    with pytest.raises(ManifoldError):
+        await client.list_bets("m1")

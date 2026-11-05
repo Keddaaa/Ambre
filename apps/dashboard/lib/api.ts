@@ -14,6 +14,7 @@ import type {
   OrderRequest,
   Portfolio,
   PortfolioPoint,
+  Stats,
   SystemStatus,
 } from "./types";
 
@@ -114,6 +115,7 @@ export const keys = {
   market: (id: string) => ["market", id] as const,
   decisions: (p: DecisionsParams) => ["decisions", p] as const,
   evaluation: ["evaluation"] as const,
+  stats: ["stats"] as const,
 };
 
 export function useSystem() {
@@ -216,6 +218,21 @@ export function useEvaluation() {
   });
 }
 
+/** `data === null` means the API reported that no simulation exists yet. */
+export function useStats() {
+  return useQuery({
+    queryKey: keys.stats,
+    queryFn: async () => {
+      try {
+        return await fetchJson<Stats>("/stats");
+      } catch (e) {
+        if (isNotFoundWith(e, "no active simulation")) return null;
+        throw e;
+      }
+    },
+  });
+}
+
 /** Manual PAPER order. A refusal by the risk engine is a normal answer (REJECTED), not an error. */
 export function usePlaceOrder() {
   const qc = useQueryClient();
@@ -239,7 +256,7 @@ export function useRunCycle() {
     mutationFn: () => postJson<CycleReport>("/control/run-cycle", {}),
     onSettled: async () => {
       await Promise.all(
-        [keys.system, keys.portfolio, ["decisions"], ["markets"], keys.evaluation].map((queryKey) =>
+        [keys.system, keys.portfolio, ["decisions"], ["markets"], keys.evaluation, keys.stats].map((queryKey) =>
           qc.invalidateQueries({ queryKey }),
         ),
       );

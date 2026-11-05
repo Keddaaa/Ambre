@@ -1,7 +1,8 @@
 """Read API + emergency halt endpoints, on a DB populated by run_cycle from the real fixture."""
 
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 from builders import SETTINGS, T_CYCLE, T_SYNC, cycle, sync
@@ -24,6 +25,7 @@ from ambre.infrastructure.orm import (
     SimulationRow,
     SnapshotRow,
 )
+from ambre.intelligence.orm import IntelMarketLinkRow, IntelObservationRow
 
 NOW = T_CYCLE + timedelta(minutes=4)
 
@@ -44,7 +46,7 @@ def populated(factory: sessionmaker[Session]) -> sessionmaker[Session]:
 
 
 def client_for(factory: sessionmaker[Session], settings: Settings = SETTINGS) -> TestClient:
-    return TestClient(create_app(settings, factory, clock=lambda: NOW))
+    return TestClient(create_app(settings, factory, clock=lambda: NOW), base_url="http://localhost")
 
 
 def test_health_ok(populated: sessionmaker[Session]) -> None:
@@ -289,7 +291,7 @@ def test_halt_requires_reason(populated: sessionmaker[Session]) -> None:
     c = client_for(populated)
     assert c.post("/control/halt", json={"reason": "ab"}).status_code == 422
     assert c.post("/control/halt", json={}).status_code == 422
-    assert c.post("/control/halt").status_code == 422
+    assert c.post("/control/halt").status_code == 415  # no JSON content type: the guard refuses
     assert c.post("/control/halt", json={"reason": "   "}).status_code == 422
     assert c.post("/control/halt", json={"reason": " ab "}).status_code == 422
 
@@ -325,3 +327,188 @@ def test_module_level_app_imports_without_db() -> None:
     from ambre.api.app import app
 
     assert app.title
+
+
+def test_stats_without_simulation_is_404(factory: sessionmaker[Session]) -> None:
+    assert client_for(factory).get("/stats").status_code == 404
+
+
+def test_stats_counts_positions_not_rejected_decisions(
+    populated: sessionmaker[Session],
+) -> None:
+    with populated() as s:
+        positions = s.scalars(select(PositionRow)).all()
+        staked = sum(p.cost for p in positions)
+        count = len(positions)
+        decisions = s.scalar(select(func.count()).select_from(DecisionRow))
+    body = client_for(populated).get("/stats").json()
+    assert body["bets"] == count
+    assert body["open"] == count
+    assert body["total_staked"] == pytest.approx(staked)
+    assert body["decisions"]["total"] == decisions
+    assert body["win_rate"] is None
+    assert body["realized_pnl"] is None
+
+
+def test_stats_reports_a_settled_loss(populated: sessionmaker[Session]) -> None:
+    with populated() as s:
+        pos = s.scalars(select(PositionRow)).first()
+        assert pos is not None
+        pos.status, pos.payout, pos.settled_at = "SETTLED", 0.0, NOW
+        market = s.get(MarketRow, pos.market_id)
+        assert market is not None
+        market.is_resolved = True
+        market.resolution = "NO" if pos.side == "YES" else "YES"
+        cost = pos.cost
+        s.commit()
+    body = client_for(populated).get("/stats").json()
+    assert (body["won"], body["lost"]) == (0, 1)
+    assert body["win_rate"] == 0.0
+    assert body["realized_pnl"] == pytest.approx(-cost)
+    assert body["recent_settled"][0]["pnl"] == pytest.approx(-cost)
+
+
+def link_research(
+    factory: sessionmaker[Session],
+    market_id: str,
+    linked_at: datetime,
+    observation_id: str = "synthetic_obs",
+    url: str | None = "https://example.test/article",
+) -> None:
+    with factory() as s:
+        s.add(
+            IntelObservationRow(
+                observation_id=observation_id,
+                provider_id="synthetic_news",
+                domain="news",
+                kind="observation",
+                payload_type="headline",
+                payload={},
+                title="Synthetic headline",
+                source_url=url,
+                published_at=linked_at,
+                available_at=linked_at,
+                ingested_at=linked_at,
+                verification_status="unverified",
+            )
+        )
+        s.flush()
+        s.add(
+            IntelMarketLinkRow(
+                market_id=market_id,
+                observation_id=observation_id,
+                relation="news_mention",
+                criteria_status="news_mention_criteria_unread",
+                evidence_level="unverified",
+                usable_for_prediction=False,
+                reasons=[],
+                created_at=linked_at,
+            )
+        )
+        s.commit()
+
+
+def first_decision(factory: sessionmaker[Session]) -> tuple[str, datetime]:
+    with factory() as s:
+        row = s.scalars(select(DecisionRow)).first()
+        assert row is not None
+        return row.market_id, row.created_at
+
+
+def decision_body(factory: sessionmaker[Session], market_id: str) -> dict[str, Any]:
+    items = client_for(factory).get("/decisions", params={"limit": 200}).json()["items"]
+    return next(d for d in items if d["market_id"] == market_id)
+
+
+def test_a_decision_keeps_citing_what_it_read_after_the_link_is_invalidated(
+    populated: sessionmaker[Session],
+) -> None:
+    """History stays as it was: the citation remains, flagged, on the decision that saw it."""
+    market_id, decided_at = first_decision(populated)
+    linked_at = decided_at - timedelta(hours=1)
+    invalidated_at = decided_at + timedelta(hours=1)
+    link_research(populated, market_id, linked_at)
+    with populated() as s:
+        before = s.get(DecisionRow, first_decision_id(s))
+        assert before is not None
+        snapshot = {c.name: getattr(before, c.name) for c in DecisionRow.__table__.columns}
+        for link in s.scalars(select(IntelMarketLinkRow)):
+            link.invalidated_at = invalidated_at
+            link.invalidated_reason = "synthetic"
+            link.invalidated_by = "synthetic-rule"
+        s.commit()
+    [source] = decision_body(populated, market_id)["research_sources"]
+    assert source["invalidated_at"] is not None
+    with populated() as s:
+        after = s.get(DecisionRow, first_decision_id(s))
+        assert after is not None
+        assert {c.name: getattr(after, c.name) for c in DecisionRow.__table__.columns} == snapshot
+
+
+def test_a_decision_taken_after_the_invalidation_does_not_cite_the_link(
+    populated: sessionmaker[Session],
+) -> None:
+    market_id, decided_at = first_decision(populated)
+    link_research(populated, market_id, decided_at - timedelta(hours=2))
+    with populated() as s:
+        for link in s.scalars(select(IntelMarketLinkRow)):
+            link.invalidated_at = decided_at - timedelta(hours=1)
+            link.invalidated_reason = "synthetic"
+            link.invalidated_by = "synthetic-rule"
+        s.commit()
+    assert decision_body(populated, market_id)["research_sources"] == []
+
+
+def first_decision_id(s: Session) -> str:
+    row = s.scalars(select(DecisionRow)).first()
+    assert row is not None
+    return row.decision_id
+
+
+def test_decision_exposes_the_market_url(populated: sessionmaker[Session]) -> None:
+    market_id, _ = first_decision(populated)
+    with populated() as s:
+        market = s.get(MarketRow, market_id)
+        assert market is not None
+        url = market.url
+    assert decision_body(populated, market_id)["market_url"] == url
+
+
+def test_decision_without_research_cites_none(populated: sessionmaker[Session]) -> None:
+    market_id, _ = first_decision(populated)
+    assert decision_body(populated, market_id)["research_sources"] == []
+
+
+def test_decision_cites_research_known_before_it(populated: sessionmaker[Session]) -> None:
+    market_id, at = first_decision(populated)
+    link_research(populated, market_id, at - timedelta(hours=1))
+    sources = decision_body(populated, market_id)["research_sources"]
+    assert [s["url"] for s in sources] == ["https://example.test/article"]
+    assert sources[0]["provider_id"] == "synthetic_news"
+    assert sources[0]["title"] == "Synthetic headline"
+    assert sources[0]["evidence_level"] == "unverified"
+    assert sources[0]["usable_for_prediction"] is False
+
+
+def test_decision_never_cites_research_found_after_it(populated: sessionmaker[Session]) -> None:
+    market_id, at = first_decision(populated)
+    link_research(populated, market_id, at + timedelta(hours=1))
+    assert decision_body(populated, market_id)["research_sources"] == []
+
+
+def test_decision_cites_at_most_five_sources_latest_first(
+    populated: sessionmaker[Session],
+) -> None:
+    market_id, at = first_decision(populated)
+    for i in range(7):
+        link_research(populated, market_id, at - timedelta(hours=i + 1), f"synthetic_obs{i}")
+    sources = decision_body(populated, market_id)["research_sources"]
+    assert len(sources) == 5
+    assert sources[0]["linked_at"] > sources[-1]["linked_at"]
+
+
+def test_market_detail_decisions_cite_research(populated: sessionmaker[Session]) -> None:
+    market_id, at = first_decision(populated)
+    link_research(populated, market_id, at - timedelta(hours=1))
+    body = client_for(populated).get(f"/markets/{market_id}").json()
+    assert body["decisions"][0]["research_sources"][0]["title"] == "Synthetic headline"

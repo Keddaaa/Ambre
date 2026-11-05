@@ -46,6 +46,8 @@ class InfoNeed(StrEnum):
     RECENT_EARTHQUAKES = "recent_earthquakes"
     WEATHER_FORECAST = "weather_forecast"
     GENERAL_NEWS = "general_news"
+    #: items read from a feed or stream polled once for every market, not searched per market
+    NEWS_FEED = "news_feed"
 
 
 class ObservationKind(StrEnum):
@@ -103,6 +105,12 @@ class ProviderCard(_Frozen):
     reserve_fraction: Annotated[float, Field(ge=0, lt=1)] = 0.2
     allow_commercial_use: bool | None = None
     verified_on: str | None = None
+    #: connector to use when it is not the provider id (several feeds share one adapter)
+    connector: str | None = None
+    #: feed or API address when the adapter needs one
+    endpoint: str | None = None
+    #: attribution the source asks for, shown wherever its items are shown
+    attribution: str | None = None
     freshness_seconds: Annotated[int, Field(gt=0)] | None = None
     # info need -> a priori relevance in [0, 1]; a prior, not a measurement
     capabilities: dict[InfoNeed, Annotated[float, Field(ge=0, le=1)]] = Field(default_factory=dict)
@@ -161,6 +169,8 @@ class NewsArticlePayload(_Frozen):
     language: str | None = None
     source_country: str | None = None
     seen_at: AwareDatetime | None = None  # when the search engine first saw it
+    summary: str | None = None  # the source's own short summary, never the article text
+    source_name: str | None = None  # the publisher as the source names it
 
 
 Payload = Annotated[
@@ -193,6 +203,9 @@ class FetchResult(_Frozen):
     retry_after_seconds: float | None = None
     http_status: int | None = None
     invalid_items: int = 0
+    #: conditional-request validators returned by the server, kept for the next poll
+    etag: str | None = None
+    last_modified: str | None = None
 
 
 def make_observation_id(provider_id: str, native_id: str, revision: str | None) -> str:

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Synthetic Atom Feed</title>
+  <id>urn:synthetic:feed</id>
+  <updated>2026-11-01T12:00:00Z</updated>
+  <entry>
+    <title>Parliament passes budget</title>
+    <id>urn:synthetic:entry:1</id>
+    <link rel="alternate" href="https://atom.example/politics/budget"/>
+    <link rel="enclosure" href="https://atom.example/audio.mp3"/>
+    <updated>2026-11-01T11:00:00Z</updated>
+    <published>2026-11-01T10:00:00Z</published>
+    <summary>The budget passed by 12 votes.</summary>
+  </entry>
+  <entry>
+    <title>Updated only</title>
+    <id>urn:synthetic:entry:2</id>
+    <link href="https://atom.example/politics/updated-only"/>
+    <updated>2026-11-01T11:30:00Z</updated>
+    <content type="text">Body used when no summary exists.</content>
+  </entry>
+</feed>

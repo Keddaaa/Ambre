@@ -85,6 +85,17 @@ class SnapshotOut(_Out):
     source_id: str
 
 
+class ResearchSourceOut(_Out):
+    provider_id: str
+    title: str | None
+    url: str | None
+    published_at: datetime | None
+    linked_at: datetime
+    evidence_level: str
+    usable_for_prediction: bool
+    invalidated_at: datetime | None = None
+
+
 class DecisionOut(_Out):
     decision_id: str
     market_id: str
@@ -106,6 +117,9 @@ class DecisionOut(_Out):
     reasons: list[str]
     invalidation: list[str]
     source_ids: list[str]
+    market_url: str | None = None
+    # Research linked to the market before this decision. It never feeds the estimate.
+    research_sources: list[ResearchSourceOut] = []
     survival_state: str
     risk_reasons: list[str]
     execution_status: str
@@ -243,3 +257,85 @@ class EvaluationOut(_Out):
     brier_difference_ci95: tuple[float, float] | None
     model_calibration: list[CalibrationBinOut]
     market_calibration: list[CalibrationBinOut]
+
+
+class DecisionFunnelOut(_Out):
+    total: int
+    simulated: int
+    rejected: int
+    no_trade: int
+
+
+class BetLineOut(_Out):
+    market_id: str
+    question: str | None
+    side: str
+    stake: float
+    entry_price: float
+    payout: float
+    pnl: float
+    resolution: str | None
+    settled_at: datetime
+
+
+class BetGroupOut(_Out):
+    label: str
+    bets: int
+    won: int
+    lost: int
+    win_rate: float | None
+    staked: float
+    realized_pnl: float | None
+
+
+class PnlPointOut(_Out):
+    index: int
+    at: datetime
+    pnl: float
+    cumulative_pnl: float
+
+
+class DayCountOut(_Out):
+    day: str
+    bets: int
+    staked: float
+
+
+class StatsOut(_Out):
+    decisions: DecisionFunnelOut
+    bets: int
+    open: int
+    settled: int
+    won: int
+    lost: int
+    pushed: int
+    refunded: int
+    win_rate: float | None
+    win_rate_ci95: tuple[float, float] | None
+    market_implied_win_rate: float | None
+    model_implied_win_rate: float | None
+    sufficient_sample: bool
+    min_sample: int
+    total_staked: float
+    open_stake: float
+    average_stake: float | None
+    median_stake: float | None
+    largest_stake: float | None
+    smallest_stake: float | None
+    realized_pnl: float | None
+    unrealized_pnl: float | None
+    total_pnl: float | None
+    roi: float | None
+    average_win: float | None
+    average_loss: float | None
+    profit_factor: float | None
+    best_bet: BetLineOut | None
+    worst_bet: BetLineOut | None
+    longest_win_streak: int
+    longest_loss_streak: int
+    current_streak: int
+    by_side: list[BetGroupOut]
+    by_entry_price: list[BetGroupOut]
+    pnl_curve: list[PnlPointOut]
+    bets_per_day: list[DayCountOut]
+    recent_settled: list[BetLineOut]

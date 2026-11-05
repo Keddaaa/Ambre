@@ -1,0 +1,54 @@
+# FORWARD TEST of the recalibrated price (ADR-019). PAPER mode only.
+# Pre-registered: the parameters, the age window and the costs below are fixed before the first
+# bet and must not be edited while the test runs. Use with its own database, for example:
+#   MAX_MARKETS_PER_CYCLE=5000 AMBRE_CONFIG=configs/forward_test.yaml \n#   DATABASE_URL=sqlite:///./var/forward_test.db ambre worker
+# MAX_MARKETS_PER_CYCLE is required: the default of 200 never reaches the markets of the window.
+# Same limits as configs/default.yaml except the explicit fee; research and news stay off.
+# Experimental, non-optimized initial parameters.
+risk:
+  max_position_fraction: 0.02
+  max_total_exposure_fraction: 0.20
+  kelly_fraction: 0.25
+  minimum_edge: 0.03
+  critical_drawdown: 0.30
+  min_stake: 1.0
+  fee_rate: 0.02  # a deliberate cost: Manifold bets showed no fee, 2% is a stress, not a quote
+survival:
+  defensive_drawdown: 0.15
+  defensive_stake_multiplier: 0.5
+  failure_value_fraction: 0.50
+  max_data_age_seconds: 900
+eligibility:
+  min_total_liquidity: 100.0
+  min_unique_bettors: 5
+  min_seconds_to_close: 3600
+prediction:
+  shrinkage_market_weight: 0.9
+  uncertainty_floor: 0.02
+  model: recalibrated_price
+  recalibration:
+    a: -0.3181
+    b: 0.9372
+    n_fit: 4474
+    fitted_on: "2026-11-02; resolved YES/NO markets created 2023-2026, price 3 days after creation (ADR-018)"
+    min_age_days: 2
+    max_age_days: 4
+    uncertainty: 0.03
+intelligence:
+  earthquake_floor_magnitude: 4.5
+  lookback_days: 7
+  fetch_limit: 500
+  max_markets_scanned: 5000
+  schedule_research: false
+  schedule_news: false
+  news_interval_seconds: 900
+  news_window_days: 7
+  research_interval_seconds: 600
+  job_lease_seconds: 900
+  max_calls_per_pass: 6
+  max_wait_in_pass_seconds: 12
+  news_timespan: 1week
+  news_max_records: 75
+  min_value_score: 0.02
+  failure_backoff_base_seconds: 60
+  failure_backoff_cap_seconds: 3600

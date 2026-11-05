@@ -6,7 +6,7 @@ Ces éléments n'existent **pas** en 0.1. Ils ne sont ni simulés ni représent�
 
 - Historique des paris (`GET /v0/bets`).
 - Courbe de calibration dans le dashboard et métriques par catégorie / horizon (Brier, log loss et calibration par tranche existent déjà, voir `EVALUATION.md`).
-- Backtesting chronologique minimal et protocole de validation reproductible.
+- ~~Backtesting chronologique minimal~~ : fait (`ambre backtest`, ADR-016). Reste le protocole de validation reproductible (graine, découpage, rapport versionné) et le backtest des sources d'information.
 - Exécuter la suite de tests sur PostgreSQL (la migration et un cycle réel sont déjà vérifiés).
 
 ## Navigation et veille autonomes (nécessité)

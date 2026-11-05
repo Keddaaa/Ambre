@@ -596,3 +596,77 @@ def test_a_paused_provider_does_not_flood_the_memory_with_one_row_per_topic(tmp:
     assert count(h, IntelRequestRow) == 1  # one row: the call that was really made
     states = [s for s, _ in h.states().values()]
     assert states.count("RESEARCH_DEFERRED") == 4 and states.count("RESEARCH_FAILED") == 1
+
+
+# --------------------------------------------------------------------------- diagnostics
+
+
+def _diagnostic_harness(tmp: Path) -> Harness:
+    return next(
+        harness(
+            tmp,
+            {
+                "synthetic_oa": OPENAI_RELEASE,
+                "synthetic_ob": OPENAI_ANNOUNCE,
+                "synthetic_an": "Will Anthropic release a new model before 2027?",
+            },
+        )
+    )
+
+
+def test_diagnostics_tell_an_answer_from_a_failed_attempt_and_name_every_cause(
+    tmp: Path,
+) -> None:
+    h = _diagnostic_harness(tmp)
+    h.net.gdelt_handler = lambda r: httpx.Response(429, text="Please limit requests")
+    h.run()
+    with h.factory() as s:
+        r = coverage_report(s)
+    d = r["diagnostics"]
+    research = d["research"]
+    # one group was tried and refused, the provider was then paused: the rest is deferred
+    assert research["answered"] == 0 and research["attempted_failed"] >= 1
+    assert research["answered"] + research["attempted_failed"] + r["counts"]["deferred"] == 3
+    assert research["answered"] == 0 and r["counts"]["with_evidence"] == 0
+    causes = d["deferred_causes"]
+    assert sum(causes.values()) == r["counts"]["deferred"] > 0
+    assert any("provider unavailable" in c for c in causes)  # recorded per market, not inferred
+    req = d["requests"]
+    assert req["by_status"].get("FAILED", 0) >= 1 and req["successful"] == 0
+    assert req["markets_per_successful_request"] is None  # no success: not 0
+    assert d["scheduler"] == {"jobs": 0, "runs": 0, "last_run_at": None, "ever_ran": False}
+
+
+def test_diagnostics_show_markets_sharing_a_topic_and_a_served_ratio(tmp: Path) -> None:
+    h = _diagnostic_harness(tmp)
+    h.net.gdelt_handler = lambda r: httpx.Response(
+        200, json=articles(article("OpenAI releases a new model", "a.example"))
+    )
+    h.run()
+    with h.factory() as s:
+        d = coverage_report(s)["diagnostics"]
+    topics = d["topics"]
+    assert topics["researchable_markets"] == 3
+    assert 1 <= topics["distinct_topics"] < 3  # the two OpenAI markets share one search
+    assert topics["largest_topic_markets"] >= 2
+    assert topics["markets_per_topic"] == pytest.approx(3 / topics["distinct_topics"], abs=0.01)
+    req = d["requests"]
+    assert req["successful"] >= 1 and req["markets_per_successful_request"] >= 1.0
+    assert d["research"]["answered"] == 3 and d["research"]["attempted_failed"] == 0
+    assert d["evidence"]["observations_by_provider"].get("gdelt", 0) >= 1
+
+
+def test_diagnostics_capacity_is_settings_arithmetic_not_a_measurement(tmp: Path) -> None:
+    h = _diagnostic_harness(tmp)
+    h.net.gdelt_handler = lambda r: httpx.Response(429, text="Please limit requests")
+    h.run()
+    with h.factory() as s:
+        d = coverage_report(s, SETTINGS)["diagnostics"]
+        assert "capacity" not in coverage_report(s)["diagnostics"]  # no settings, no arithmetic
+    cap = d["capacity"]
+    cfg = SETTINGS.intelligence
+    assert cap["calls_per_hour_ceiling"] == pytest.approx(
+        cfg.max_calls_per_pass * 3600 / cfg.research_interval_seconds, abs=0.01
+    )
+    assert cap["topics_waiting"] >= 1 and cap["hours_to_drain_ceiling"] > 0
+    assert "ceiling" in cap["note"]

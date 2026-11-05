@@ -27,6 +27,7 @@ from ambre.intelligence.models import (
     WeatherForecastPayload,
     is_actionable,
 )
+from ambre.intelligence.news_events import NewsItem, cluster_items
 from ambre.intelligence.registry import Registry
 
 _VERIFIED = (ProviderStatus.VERIFIED_FREE, ProviderStatus.VERIFIED_LIMITED)
@@ -192,6 +193,20 @@ def _earthquake_features(
     return FeatureSet(plan.market_id, tuple(out), tuple(rejected))
 
 
+def _news_items(observations: Sequence[Observation]) -> list[NewsItem]:
+    """The titled, linked articles as clustering input: copies of one story count once."""
+    items: list[NewsItem] = []
+    for o in observations:
+        if o.source_url and o.title and isinstance(o.payload, NewsArticlePayload):
+            when = o.published_at or o.available_at or o.ingested_at
+            items.append(
+                NewsItem(
+                    o.observation_id, o.source_url, o.title, o.payload.domain or o.provider_id, when
+                )
+            )
+    return items
+
+
 def _news_features(
     plan: MarketPlan, observations: Sequence[Observation], registry: Registry, now: datetime
 ) -> FeatureSet:
@@ -224,6 +239,13 @@ def _news_features(
             "news.article_count",
             float(len(usable)),
             "articles",
+            available_at=newest.available_at,
+            **kwargs,
+        ),
+        ContextFeature(
+            "news.distinct_events",
+            float(len(cluster_items(_news_items(usable)))),
+            "events",
             available_at=newest.available_at,
             **kwargs,
         ),

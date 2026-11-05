@@ -4,16 +4,23 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.orm import Session
 
 from ambre.domain.models import BinaryMarket, MarketSnapshot, SimulationStatus
+from ambre.evaluation_engine.backtest import BacktestMarket
+from ambre.evaluation_engine.forward import ForwardObservation
+from ambre.evaluation_engine.historical import HistoricalMarket
+from ambre.evaluation_engine.history import PriceHistory, PricePoint
 from ambre.infrastructure.orm import (
     ControlStateRow,
     DecisionRow,
     IgnoredMarketRow,
     MarketRow,
     PortfolioSnapshotRow,
+    PositionRow,
+    PriceHistoryStateRow,
+    PricePointRow,
     SimulationRow,
     SnapshotRow,
     SyncStateRow,
@@ -334,6 +341,30 @@ def latest_portfolio_snapshot(session: Session, simulation_id: str) -> Portfolio
     ).first()
 
 
+def bets_of_simulation(
+    session: Session, simulation_id: str
+) -> list[tuple[PositionRow, MarketRow, DecisionRow | None]]:
+    """Every position of a simulation with its market and the decision that opened it."""
+    rows = session.execute(
+        select(PositionRow, MarketRow, DecisionRow)
+        .join(MarketRow, MarketRow.id == PositionRow.market_id)
+        .outerjoin(DecisionRow, DecisionRow.decision_id == PositionRow.decision_id)
+        .where(PositionRow.simulation_id == simulation_id)
+        .order_by(PositionRow.id)
+    ).all()
+    return [(pos, market, decision) for pos, market, decision in rows]
+
+
+def decision_status_counts(session: Session, simulation_id: str) -> dict[str, int]:
+    """Number of journaled decisions per execution status."""
+    rows = session.execute(
+        select(DecisionRow.execution_status, func.count())
+        .where(DecisionRow.simulation_id == simulation_id)
+        .group_by(DecisionRow.execution_status)
+    ).all()
+    return {status: count for status, count in rows}
+
+
 def resolved_decision_scores(
     session: Session, simulation_id: str
 ) -> list[tuple[float, float, str]]:
@@ -360,3 +391,153 @@ def resolved_decision_scores(
             (decision.market_probability, decision.estimated_probability, str(resolution)),
         )
     return list(first.values())
+
+
+def backtest_markets(session: Session) -> list[BacktestMarket]:
+    """YES/NO markets with a known resolution date, seen at their first snapshot.
+
+    The decision instant is the earliest ``observed_at`` and the price is that
+    snapshot's probability. Markets without a snapshot, unresolved ones, other
+    resolutions (CANCEL, MKT, ...) and undated resolutions are left out.
+    """
+    stmt = (
+        select(SnapshotRow.market_id, SnapshotRow.observed_at, SnapshotRow.probability)
+        .join(MarketRow, MarketRow.id == SnapshotRow.market_id)
+        .where(MarketRow.resolution.in_(("YES", "NO")), MarketRow.resolution_at.is_not(None))
+        .order_by(SnapshotRow.market_id, SnapshotRow.observed_at, SnapshotRow.id)
+    )
+    first: dict[str, tuple[datetime, float]] = {}
+    for market_id, observed_at, probability in session.execute(stmt).all():
+        first.setdefault(market_id, (observed_at, probability))
+    markets = {
+        m.id: m for m in session.scalars(select(MarketRow).where(MarketRow.id.in_(list(first))))
+    }
+    return [
+        BacktestMarket(
+            market_id=market_id,
+            decision_at=decision_at,
+            market_probability=probability,
+            resolution_at=markets[market_id].resolution_at,
+            outcome=markets[market_id].resolution == "YES",
+        )
+        for market_id, (decision_at, probability) in sorted(first.items())
+    ]
+
+
+def markets_needing_history(session: Session, limit: int) -> list[str]:
+    """Resolved YES/NO markets with a known resolution date and no stored history yet, the most
+    recently resolved first. A market whose fetch was incomplete is not asked again."""
+    stmt = (
+        select(MarketRow.id)
+        .outerjoin(PriceHistoryStateRow, PriceHistoryStateRow.market_id == MarketRow.id)
+        .where(
+            MarketRow.resolution.in_(("YES", "NO")),
+            MarketRow.resolution_at.is_not(None),
+            PriceHistoryStateRow.market_id.is_(None),
+        )
+        .order_by(MarketRow.resolution_at.desc(), MarketRow.id)
+        .limit(limit)
+    )
+    return list(session.scalars(stmt))
+
+
+def save_price_history(
+    session: Session, history: PriceHistory, bet_count: int, now: datetime
+) -> None:
+    """Store a fetched history. Re-saving a market replaces its points: the call is idempotent."""
+    session.execute(delete(PricePointRow).where(PricePointRow.market_id == history.market_id))
+    existing = session.get(PriceHistoryStateRow, history.market_id)
+    if existing is not None:
+        session.delete(existing)
+    session.flush()
+    session.add(
+        PriceHistoryStateRow(
+            market_id=history.market_id,
+            complete=history.complete,
+            bet_count=bet_count,
+            dropped=history.dropped,
+            initial_probability=history.initial_probability,
+            fetched_at=now,
+        )
+    )
+    session.add_all(
+        PricePointRow(
+            market_id=history.market_id, bet_id=p.bet_id, at=p.at, probability=p.probability
+        )
+        for p in history.points
+    )
+    session.flush()
+
+
+def historical_markets(session: Session) -> list[HistoricalMarket]:
+    """Resolved YES/NO markets with a stored history, ready for the point-in-time evaluation."""
+    rows = session.execute(
+        select(MarketRow, PriceHistoryStateRow)
+        .join(PriceHistoryStateRow, PriceHistoryStateRow.market_id == MarketRow.id)
+        .where(MarketRow.resolution.in_(("YES", "NO")), MarketRow.resolution_at.is_not(None))
+        .order_by(MarketRow.resolution_at, MarketRow.id)
+    ).all()
+    points: dict[str, list[PricePoint]] = {}
+    for p in session.scalars(
+        select(PricePointRow).order_by(PricePointRow.market_id, PricePointRow.at)
+    ):
+        points.setdefault(p.market_id, []).append(PricePoint(p.at, p.probability, p.bet_id))
+    out: list[HistoricalMarket] = []
+    for market, state in rows:
+        assert market.resolution_at is not None
+        out.append(
+            HistoricalMarket(
+                market_id=market.id,
+                question=market.question,
+                created_at=market.created_at,
+                close_at=market.close_at,
+                resolution_at=market.resolution_at,
+                outcome=market.resolution == "YES",
+                history=PriceHistory(
+                    market_id=market.id,
+                    initial_probability=state.initial_probability,
+                    points=tuple(points.get(market.id, [])),
+                    complete=state.complete,
+                    dropped=state.dropped,
+                ),
+            )
+        )
+    return out
+
+
+def forward_observations(
+    session: Session, min_age_days: float, max_age_days: float
+) -> tuple[list[ForwardObservation], dict[str, int]]:
+    """The forward-test sample (ADR-019): for each market, the model's FIRST decision taken while
+    the market's age was inside the window, kept only if the market resolved YES/NO strictly after
+    that decision. Decisions of any other model are ignored. Also the counts behind it."""
+    stmt = (
+        select(DecisionRow, MarketRow)
+        .join(MarketRow, MarketRow.id == DecisionRow.market_id)
+        .where(DecisionRow.model_version.like("recalibrated-price%"))
+        .order_by(DecisionRow.created_at, DecisionRow.decision_id)
+    )
+    first: dict[str, tuple[DecisionRow, MarketRow]] = {}
+    for decision, market in session.execute(stmt).all():
+        age_days = (decision.created_at - market.created_at).total_seconds() / 86_400.0
+        if min_age_days <= age_days <= max_age_days and market.id not in first:
+            first[market.id] = (decision, market)
+    observations = [
+        ForwardObservation(
+            market_id=market.id,
+            question=market.question,
+            market_probability=decision.market_probability,
+            estimated_probability=decision.estimated_probability,
+            outcome=market.resolution == "YES",
+        )
+        for decision, market in first.values()
+        if market.resolution in ("YES", "NO")
+        and market.resolution_at is not None
+        and decision.created_at < market.resolution_at
+    ]
+    counts = {
+        "markets_with_window_decision": len(first),
+        "resolved_yes_no": len(observations),
+        "pending": sum(1 for _, m in first.values() if m.resolution is None),
+    }
+    return observations, counts

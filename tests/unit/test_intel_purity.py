@@ -22,6 +22,9 @@ PURE = [
     "estimation",
     "queries",
     "states",
+    "feature_journal",
+    "news_parsing",
+    "news_events",
 ]
 FORBIDDEN = ("ambre.infrastructure", "ambre.integrations", "ambre.pipeline", "httpx", "sqlalchemy")
 

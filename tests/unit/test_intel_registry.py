@@ -104,7 +104,7 @@ def test_shipped_registry_matches_the_verified_whitelist() -> None:
     reg = load_registry(SHIPPED)
     assert isinstance(reg, Registry)
     ids = {c.id for c in reg.all()}
-    assert ids == {
+    owner_confirmed = {
         "usgs_earthquakes",
         "nasa_eonet",
         "open_meteo",
@@ -114,6 +114,11 @@ def test_shipped_registry_matches_the_verified_whitelist() -> None:
         "bluesky",
         "manifold",
     }
+    # News ingestion (ADR-010 addendum): one verified API, and publisher feeds that exist only
+    # as disabled, unverified entries until their terms are checked.
+    news_additions = {"spaceflight_news", "bbc_news_world", "guardian_world", "dw_top_stories"}
+    assert ids == owner_confirmed | news_additions
+    assert {c.id for c in reg.enabled()} & news_additions == {"spaceflight_news"}
     for card in reg.enabled():
         assert card.status in (ProviderStatus.VERIFIED_FREE, ProviderStatus.VERIFIED_LIMITED)
         assert card.authentication == "none"

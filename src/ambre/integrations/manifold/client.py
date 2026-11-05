@@ -68,6 +68,41 @@ class ManifoldClient:
             raise ManifoldError(f"expected a JSON object for market, got {type(body).__name__}")
         return body
 
+    async def list_bets(
+        self, contract_id: str, *, before: str | None = None, limit: int = MAX_LIST_LIMIT
+    ) -> list[dict[str, Any]]:
+        """One page of a market's bets, newest first; ``before`` is the id of the last bet seen."""
+        if not 1 <= limit <= MAX_LIST_LIMIT:
+            raise ValueError(f"limit must be in [1, {MAX_LIST_LIMIT}], got {limit}")
+        params: dict[str, str] = {"contractId": contract_id, "limit": str(limit)}
+        if before is not None:
+            params["before"] = before
+        body = await self._get_json("/v0/bets", params)
+        if not isinstance(body, list):
+            raise ManifoldError(f"expected a JSON list from /v0/bets, got {type(body).__name__}")
+        return body
+
+    async def search_resolved(
+        self, *, before_time_ms: int, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """Resolved binary markets created before an instant, newest first (read-only)."""
+        if not 1 <= limit <= MAX_LIST_LIMIT:
+            raise ValueError(f"limit must be in [1, {MAX_LIST_LIMIT}], got {limit}")
+        params = {
+            "term": "",
+            "filter": "resolved",
+            "sort": "newest",
+            "contractType": "BINARY",
+            "limit": str(limit),
+            "beforeTime": str(before_time_ms),
+        }
+        body = await self._get_json("/v0/search-markets", params)
+        if not isinstance(body, list):
+            raise ManifoldError(
+                f"expected a JSON list from /v0/search-markets, got {type(body).__name__}"
+            )
+        return body
+
     async def aclose(self) -> None:
         if self._owns_http:
             await self._http.aclose()

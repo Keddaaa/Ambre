@@ -94,7 +94,11 @@ def test_api_evaluation_route(populated: sessionmaker[Session]) -> None:
         a, *_ = _decided_markets(s)
         _resolve(s, a, "YES", T_CYCLE + timedelta(hours=1))
         s.commit()
-    body = TestClient(create_app(SETTINGS, populated)).get("/evaluation").json()
+    body = (
+        TestClient(create_app(SETTINGS, populated), base_url="http://localhost")
+        .get("/evaluation")
+        .json()
+    )
     assert body["n"] == 1
     assert body["sufficient_sample"] is False
     assert body["brier_difference_ci95"] is None
@@ -102,7 +106,7 @@ def test_api_evaluation_route(populated: sessionmaker[Session]) -> None:
 
 
 def test_api_evaluation_without_simulation_is_404(factory: sessionmaker[Session]) -> None:
-    r = TestClient(create_app(SETTINGS, factory)).get("/evaluation")
+    r = TestClient(create_app(SETTINGS, factory), base_url="http://localhost").get("/evaluation")
     assert r.status_code == 404
 
 
@@ -112,4 +116,55 @@ def test_cli_evaluate_prints_json(
     out = cli.evaluate(populated)
     assert out is not None
     assert json.loads(json.dumps(out))["n"] == 0
+    capsys.readouterr()
+
+
+# --------------------------------------------------------------------------- backtest
+
+
+def test_backtest_markets_use_first_snapshot_and_yes_no_only(
+    populated: sessionmaker[Session],
+) -> None:
+    with populated() as s:
+        baseline = {r.market_id for r in repo.backtest_markets(s)}
+        fresh = [m for m in _decided_markets(s) if m not in baseline]
+        a, b = fresh[:2]
+        after = T_SYNC + timedelta(days=3)
+        _resolve(s, a, "YES", after)
+        _resolve(s, b, "CANCEL", after)
+        s.commit()
+        rows = {r.market_id: r for r in repo.backtest_markets(s)}
+    assert a in rows and b not in rows
+    assert rows[a].outcome is True
+    assert rows[a].decision_at == T_SYNC
+    assert 0.0 <= rows[a].market_probability <= 1.0
+
+
+def test_backtest_markets_skip_unknown_resolution_time(populated: sessionmaker[Session]) -> None:
+    with populated() as s:
+        baseline = {r.market_id for r in repo.backtest_markets(s)}
+        a = next(m for m in _decided_markets(s) if m not in baseline)
+        _resolve(s, a, "YES", None)
+        s.commit()
+        assert a not in {r.market_id for r in repo.backtest_markets(s)}
+
+
+def test_cli_backtest_prints_json(
+    populated: sessionmaker[Session], capsys: pytest.CaptureFixture[str]
+) -> None:
+    with populated() as s:
+        baseline = {r.market_id for r in repo.backtest_markets(s)}
+        fresh = [m for m in _decided_markets(s) if m not in baseline][:2]
+        for market_id in fresh:
+            _resolve(s, market_id, "YES", T_SYNC + timedelta(days=3))
+        s.commit()
+        expected = sum(
+            1
+            for r in repo.backtest_markets(s)
+            if r.resolution_at is not None and r.decision_at < r.resolution_at
+        )
+    out = cli.backtest(populated)
+    assert json.loads(json.dumps(out, default=str))["report"]["n"] == expected
+    assert expected >= 2
+    assert out["report"]["sufficient_sample"] is False
     capsys.readouterr()

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Synthetic World News</title>
+    <link>https://world.example/</link>
+    <description>hand-written test feed</description>
+    <item>
+      <title>Central bank holds rates steady</title>
+      <link>https://world.example/economy/rates-steady</link>
+      <guid isPermaLink="false">wn-0001</guid>
+      <description><![CDATA[<p>The bank kept its <em>benchmark</em> rate unchanged.</p>]]></description>
+      <pubDate>Sun, 01 Nov 2026 09:30:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Storm closes ports along the coast</title>
+      <link>https://world.example/weather/storm-ports</link>
+      <description>Ports were closed on Sunday.</description>
+    </item>
+    <item>
+      <title>Item with no link</title>
+      <guid>wn-0003</guid>
+    </item>
+  </channel>
+</rss>

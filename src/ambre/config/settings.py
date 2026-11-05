@@ -1,10 +1,11 @@
+import math
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ambre.domain.models import ExecutionMode
@@ -43,11 +44,51 @@ class EligibilityConfig(BaseModel):
     min_seconds_to_close: int = Field(default=3600, ge=0)
 
 
+class RecalibrationConfig(BaseModel):
+    """Frozen parameters of the recalibrated-price model, written down before the forward test.
+
+    ``P(YES) = sigmoid(a + b * logit(q))`` for a market whose age is inside the window; outside
+    it the model echoes the market price. Nothing here is ever refitted while a test runs.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    a: float
+    b: float = Field(gt=0)
+    n_fit: int = Field(gt=0)
+    fitted_on: str = Field(min_length=1)
+    min_age_days: float = Field(ge=0)
+    max_age_days: float = Field(gt=0)
+    uncertainty: float = Field(default=0.03, gt=0, le=0.5)
+
+    @field_validator("a", "b")
+    @classmethod
+    def _finite(cls, v: float) -> float:
+        if not math.isfinite(v):
+            raise ValueError("value must be finite")
+        return v
+
+    @model_validator(mode="after")
+    def _window(self) -> "RecalibrationConfig":
+        if self.max_age_days <= self.min_age_days:
+            raise ValueError("max_age_days must exceed min_age_days")
+        return self
+
+
 class PredictionConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     shrinkage_market_weight: float = Field(default=0.9, ge=0, le=1)
     uncertainty_floor: float = Field(default=0.02, ge=0, le=1)
+    #: which probability model the cycle uses; the default is the long-standing baseline
+    model: Literal["base_rate_shrinkage", "recalibrated_price"] = "base_rate_shrinkage"
+    recalibration: RecalibrationConfig | None = None
+
+    @model_validator(mode="after")
+    def _needs_parameters(self) -> "PredictionConfig":
+        if self.model == "recalibrated_price" and self.recalibration is None:
+            raise ValueError("model recalibrated_price needs its frozen recalibration parameters")
+        return self
 
 
 class IntelligenceConfig(BaseModel):
@@ -77,6 +118,10 @@ class IntelligenceConfig(BaseModel):
     news_timespan: str = "1week"
     news_max_records: int = Field(default=75, ge=1, le=250)
     failure_backoff_cap_seconds: float = Field(default=3600.0, gt=0)
+    # Shared news ingestion: a separate scheduled job, so a failing feed never delays research.
+    schedule_news: bool = True
+    news_interval_seconds: int = Field(default=900, ge=60)
+    news_window_days: int = Field(default=7, ge=1, le=30)
 
 
 def _load_yaml_block(name: str) -> dict[str, Any]:
@@ -97,7 +142,9 @@ class Settings(BaseSettings):
     manifold_base_url: str = "https://api.manifold.markets"
     database_url: str = "sqlite:///./var/ambre.db"
     initial_capital: float = Field(default=1000.0, gt=0)
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # Host headers the API answers to: a rebound DNS name reaches loopback under its own name.
+    api_allowed_hosts: list[str] = ["localhost", "127.0.0.1"]
     max_markets_per_cycle: int = Field(default=200, gt=0)
     providers_path: Path = DEFAULT_PROVIDERS_PATH
     gazetteer_path: Path = DEFAULT_GAZETTEER_PATH

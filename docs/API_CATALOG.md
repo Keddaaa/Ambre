@@ -200,7 +200,41 @@ Conséquence : AMBRE ne peut pas rechercher des mots-clés sur Bluesky sans comp
 
 C'est la source déjà utilisée par `integrations/manifold` (lecture seule).
 
-## Candidats non vérifiés
+### `spaceflight_news` — Spaceflight News API v4 (actualités spatiales)
+
+| Champ | Valeur |
+|---|---|
+| Domaine | actualités spatiales (lancements, agences, industrie) |
+| URL officielle | https://api.spaceflightnewsapi.net (produit de The Space Devs) |
+| Documentation | schéma OpenAPI `https://api.spaceflightnewsapi.net/v4/schema/` et FAQ `github.com/TheSpaceDevs/Tutorials/.../faq_SNAPI.md` (lus le 2026-11-02) |
+| Endpoint pertinent | `GET /v4/articles/` (`limit`, `offset` ≤ 10 000, `ordering` = `published_at` / `updated_at`, `published_at_gte`, `search`, `news_site`) |
+| Authentification | aucune (le schéma ne déclare aucun schéma de sécurité) |
+| Accès gratuit | oui : « SNAPI is fully free to use for everyone » (FAQ) |
+| Quota gratuit | **UNKNOWN** : aucune limite publiée ; budget interne volontairement bas (1 requête / 5 min, 12 / h, 200 / jour) |
+| Fraîcheur | une relève toutes les 15 min au plus (fenêtre de fraîcheur) |
+| Historique | pagination par `published_at_lt` au-delà de 10 000 résultats |
+| Champs d'un article | `id`, `title`, `url`, `news_site`, `summary`, `published_at`, `updated_at`, `authors`, `image_url`, `launches`, `events` |
+| Licence | **non publiée** pour les données d'articles ; la FAQ demande seulement un soutien aux usages commerciaux |
+| Restrictions de stockage | **UNKNOWN** : aucune condition lue. AMBRE ne garde que titre, résumé tronqué à 500 caractères, lien, éditeur et dates ; jamais le texte d'un article |
+| Obligation | nommer l'éditeur de chaque article (`news_site`) partout où il est montré |
+| Fiabilité et qualité | agrégateur de titres d'éditeurs spécialisés : un titre est un compte rendu non vérifié |
+| Statut | **VERIFIED_LIMITED**, activé |
+
+Observé (2026-11-02) : 1 requête réelle, HTTP 200, 50 articles de 8 éditeurs (NASA, ESA, SpaceNews, NASASpaceflight, Spaceflight Now, European Spaceflight, SpacePolicyOnline.com, Arstechnica), aucun élément invalide. Le service ne donne **pas** l'heure à laquelle il a vu l'article : `available_at` est l'instant de notre relève, jamais `published_at`.
+
+Limite : la couverture est celle de l'espace. Elle ne sert que les marchés qui parlent de SpaceX, NASA, Blue Origin, etc. (44 marchés ouverts mentionnent un mot-clé spatial sur 1 608).
+
+### Flux RSS d'éditeurs — `bbc_news_world`, `guardian_world`, `dw_top_stories` (NON ACTIVÉS)
+
+Lecture du 2026-11-04. Ambre relèverait ces flux par programme, garderait titres et métadonnées, et les rapprocherait de marchés par un traitement automatique. Aucune autorisation ne couvre cet usage : les trois flux restent `UNVERIFIED` et désactivés, et ne s'activent pas sans autorisation écrite de l'éditeur.
+
+| Éditeur | Document officiel | Restrictions relevées | Conséquence |
+|---|---|---|---|
+| BBC | [Terms of Use](https://www.bbc.co.uk/usingthebbc/terms-of-use/), [robots.txt](https://www.bbc.co.uk/robots.txt) | Section 15 : « You're not allowed to pluck metadata from our content or RSS feeds ». Permission requise pour tout contenu prélevé « to develop or train artificial intelligence or to do computer analysis ». Un flux peut s'afficher sur un site, sans modification, avec crédit et marque. `robots.txt` interdit `/` à `ClaudeBot`, `anthropic-ai` et `CCBot`. | Usage prévu non couvert. |
+| The Guardian | [Terms of service](https://www.theguardian.com/help/terms-of-service), [Open Platform](https://open-platform.theguardian.com/access/) | Usage personnel et non commercial seulement. Sans accord écrit, interdiction de copier, extraire ou collecter le contenu et ses métadonnées pour l'apprentissage automatique ou l'IA, pour l'agrégation, l'analyse ou la fouille de textes et de données. Robots, crawlers et tout outil automatisé interdits sur le site et le contenu. La clé non commerciale de l'Open Platform vise par exemple les mémoires et les hackathons ; l'IA générative et la fouille relèvent de la clé commerciale. | Usage prévu non couvert. Une voie existe peut-être par l'Open Platform : à demander à l'éditeur, pas à supposer. |
+| Deutsche Welle | [Legal notice](https://www.dw.com/en/legal-notice/a-63500643) | Le texte récupéré ne contient aucune clause sur les flux, l'automatisation ou l'IA. Cela ne vaut pas autorisation : les conditions propres aux flux n'ont pas été trouvées, et `robots.txt` n'a pas répondu. | Conditions inconnues : `UNKNOWN`, désactivé. |
+
+Ces lignes résument des pages lues à une date donnée ; ce n'est pas un avis juridique. Pages BBC et Guardian relevées par `curl` avec un en-tête de navigateur, page DW avec `ambre-terms-review`. Ne pas refaire ce relevé par robot sur la BBC : son `robots.txt` l'interdit aux agents d'Anthropic.
 
 Fournisseurs du catalogue du propriétaire pour lesquels **aucune fiche n'a été complétée** : Marketaux, finlight, NewsData.io, GNews, NewsAPI, The Guardian, FRED, ECB, Eurostat, World Bank, SEC EDGAR, CoinGecko, Mastodon, Reddit, YouTube Data API, Google Trends, TwitterAPI.io, TheSportsDB, football-data.org, API-Football, OpenLigaDB, StatsBomb Open Data, OpenF1, Jolpica F1, NOAA, Meteostat, NASA POWER, OpenWeatherMap, MET Norway, ACLED, ReliefWeb, HDX, OpenAlex, arXiv, Crossref, WHO GHO, CDC, NASA Open APIs.
 

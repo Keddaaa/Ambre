@@ -76,6 +76,10 @@ class IntelMarketLinkRow(Base):
     usable_for_prediction: Mapped[bool] = mapped_column(Boolean)
     reasons: Mapped[list[str]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    # A link found wrong is flagged, never deleted: decisions taken before keep their citation.
+    invalidated_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    invalidated_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    invalidated_by: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class IntelUsageRow(Base):
@@ -159,3 +163,42 @@ class IntelMarketStateRow(Base):
     last_researched_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime)
     detail: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class IntelFeatureJournalRow(Base):
+    """What the network knew about a market at one instant: dated features and the price then.
+
+    Append-only and read by nobody on the betting path. Joined later with the resolved
+    outcome it becomes the training and validation set for a model; until then it is only a
+    record. A row is written when the knowledge changed (``fingerprint``), never twice.
+    """
+
+    __tablename__ = "intel_feature_journal"
+    __table_args__ = (Index("ix_intel_feature_journal_market_as_of", "market_id", "as_of"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    market_id: Mapped[str] = mapped_column(String, ForeignKey("markets.id"))
+    as_of: Mapped[datetime] = mapped_column(UTCDateTime)
+    domain: Mapped[str] = mapped_column(String, index=True)
+    need: Mapped[str | None] = mapped_column(String, nullable=True)
+    level: Mapped[int] = mapped_column(Integer)
+    estimable: Mapped[bool] = mapped_column(Boolean)
+    market_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fingerprint: Mapped[str] = mapped_column(String)
+    features: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+
+
+class IntelFeedStateRow(Base):
+    """Where the polling of one news feed or stream stands: the server's validators for a
+    conditional request and the outcome of the last poll. One row per provider."""
+
+    __tablename__ = "intel_feed_state"
+
+    provider_id: Mapped[str] = mapped_column(String, primary_key=True)
+    etag: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_modified: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_polled_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_item_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: newest ``published_at`` already stored: the next poll asks only for what is newer
+    newest_published_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

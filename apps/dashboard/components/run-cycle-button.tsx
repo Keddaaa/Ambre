@@ -2,8 +2,9 @@
 
 import { Button } from "@/components/ui/button";
 import { useRunCycle } from "@/lib/api";
+import { cycleErrorMessage } from "@/lib/run-cycle";
 
-/** Runs one paper cycle on the stored data; the worker keeps syncing and cycling on its own. */
+/** Runs one paper cycle on the stored data; refused while a worker runs them on its own. */
 export function RunCycleButton() {
   const run = useRunCycle();
   const r = run.data;
@@ -14,7 +15,7 @@ export function RunCycleButton() {
       </Button>
       {run.isError ? (
         <span role="alert" className="max-w-xs text-right text-xs text-destructive">
-          {run.error.message}
+          {cycleErrorMessage(run.error.message)}
         </span>
       ) : r ? (
         <span role="status" className="text-xs text-muted-foreground">

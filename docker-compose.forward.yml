@@ -1,0 +1,38 @@
+# Test en avant pré-enregistré (ADR-019), dans un projet Compose à part : il ne partage ni réseau,
+# ni volume, ni base avec la simulation principale (docker-compose.yml) et ne dépend pas de
+# PostgreSQL. Lancer depuis la racine du dépôt :
+#   docker compose -f docker-compose.forward.yml up -d --build
+# PAPER uniquement : le mode et l'interdiction d'ordres sont fixés ici ; aucun .env ni clé n'est lu.
+# Une seule instance : le bail en base (worker_lease) empêche un second worker sur cette base ; ne
+# pas mettre ce service à l'échelle.
+name: ambre-forward
+
+services:
+  forward-worker:
+    build: .
+    restart: unless-stopped
+    # init (tini) devient le PID 1 : il transmet SIGTERM au worker (arrêt propre) et sort si le
+    # worker meurt, ce qui déclenche le redémarrage automatique (un PID 1 ignore les signaux).
+    init: true
+    stop_grace_period: 2m
+    environment:
+      EXECUTION_MODE: PAPER
+      ENABLE_MANIFOLD_ORDERS: "false"
+      AMBRE_CONFIG: /app/configs/forward_test.yaml
+      DATABASE_URL: sqlite:////app/var/forward_test.db
+      MAX_MARKETS_PER_CYCLE: "5000"
+    volumes:
+      - ambre_forward_data:/app/var
+    # exec : le worker remplace le shell et reçoit directement le SIGTERM relayé par init
+    command: ["sh", "-c", "ambre init-db && exec ambre worker --interval 300"]
+    healthcheck:
+      # sain seulement si le bail appartient au worker de CE conteneur (après un plantage, le bail
+      # du worker mort paraît frais jusqu'à son expiration alors que le nouveau attend)
+      test: ["CMD", "ambre", "worker-status", "--check", "--mine", "--max-age", "1500"]
+      interval: 5m
+      timeout: 30s
+      start_period: 15m
+      retries: 2
+
+volumes:
+  ambre_forward_data:

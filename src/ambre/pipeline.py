@@ -29,18 +29,26 @@ from ambre.domain.models import (
     SurvivalAssessment,
     SurvivalState,
 )
+from ambre.evaluation_engine.betting import (
+    BetRecord,
+    BettingStats,
+    DecisionFunnel,
+    betting_stats,
+)
 from ambre.evaluation_engine.metrics import EvaluationReport, ScoredForecast, evaluate
 from ambre.execution_engine.executor import DecisionDraft, ExecutionGate, PaperExecutor
 from ambre.feature_engine.features import extract_features
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure.orm import DecisionRow, MarketRow, SnapshotRow
 from ambre.portfolio.service import (
+    OPEN,
     PortfolioService,
     SettlementReport,
     create_simulation,
     mark_simulation_dead,
 )
-from ambre.prediction_engine.baselines import BaseRateShrinkage
+from ambre.prediction_engine.baselines import BaseRateShrinkage, ProbabilityModel
+from ambre.prediction_engine.recalibration import RecalibratedPrice
 from ambre.risk_engine.risk import PortfolioView, RiskEngine
 from ambre.strategy_engine.strategies import P_CONS_MAX, P_CONS_MIN, ValueHunter
 from ambre.survival_engine.survival import SurvivalInputs, assess_survival, is_failure
@@ -150,7 +158,7 @@ class _Cycle:
     def evaluate_markets(
         self,
         report: CycleReport,
-        model: BaseRateShrinkage,
+        model: ProbabilityModel,
         view: PortfolioView,
         survival: SurvivalAssessment,
     ) -> PortfolioView:
@@ -210,7 +218,7 @@ class _Cycle:
         snap: MarketSnapshot,
         snapshot_id: int,
         key: str,
-        model: BaseRateShrinkage,
+        model: ProbabilityModel,
         view: PortfolioView,
         survival: SurvivalAssessment,
     ) -> ExecutionStatus:
@@ -300,14 +308,25 @@ def run_cycle(session: Session, settings: Settings, now: datetime) -> CycleRepor
         mark_simulation_dead(session, sim.id, reason, now)
         logger.error("simulation %s marked DEAD: %s", sim.id, reason)
     else:
-        model = BaseRateShrinkage.fit(
-            repo.resolved_binary_outcomes(session, before=now), settings.prediction
-        )
+        model = build_model(session, settings, now)
         report.model_version = model.version
         view = c.evaluate_markets(report, model, view, survival)
 
     c.portfolio.record_snapshot(view, c.peak(view), survival, now)
     return report
+
+
+def build_model(session: Session, settings: Settings, now: datetime) -> ProbabilityModel:
+    """The probability model the configuration asks for.
+
+    The default fits the base-rate baseline on the markets resolved before ``now``. The
+    recalibrated price is built from frozen parameters and is never refitted by the cycle.
+    """
+    prediction = settings.prediction
+    if prediction.model == "recalibrated_price":
+        assert prediction.recalibration is not None  # enforced by the configuration itself
+        return RecalibratedPrice(prediction.recalibration, prediction)
+    return BaseRateShrinkage.fit(repo.resolved_binary_outcomes(session, before=now), prediction)
 
 
 def evaluation_for_simulation(session: Session, simulation_id: str) -> EvaluationReport:
@@ -317,6 +336,50 @@ def evaluation_for_simulation(session: Session, simulation_id: str) -> Evaluatio
         for q, p, res in repo.resolved_decision_scores(session, simulation_id)
     ]
     return evaluate(scored)
+
+
+def betting_stats_for_simulation(session: Session, simulation_id: str) -> BettingStats:
+    """Win rate, stakes and P&L of the simulation, open bets marked at the latest price."""
+    svc = PortfolioService(session, simulation_id)
+    rows = repo.bets_of_simulation(session, simulation_id)
+    prices: dict[str, float] = {}
+    open_positions = [pos for pos, _, _ in rows if pos.status == OPEN]
+    for pos in open_positions:
+        snap = repo.latest_snapshot_for_market(session, pos.market_id)
+        if snap is not None:
+            prices[pos.market_id] = snap.probability
+    values = {p.id: value for p, _, value in svc.position_values(prices, open_positions)}
+
+    def win_probability(pos_side: str, decision: DecisionRow | None) -> float | None:
+        if decision is None:
+            return None
+        p_yes = decision.estimated_probability
+        return p_yes if pos_side == Side.YES.value else 1.0 - p_yes
+
+    records = [
+        BetRecord(
+            market_id=pos.market_id,
+            question=market.question,
+            side=pos.side,
+            stake=pos.cost,
+            shares=pos.shares,
+            placed_at=pos.opened_at,
+            settled_at=pos.settled_at,
+            payout=pos.payout,
+            resolution=market.resolution,
+            current_value=values.get(pos.id),
+            estimated_win_probability=win_probability(pos.side, decision),
+        )
+        for pos, market, decision in rows
+    ]
+    counts = repo.decision_status_counts(session, simulation_id)
+    funnel = DecisionFunnel(
+        total=sum(counts.values()),
+        simulated=counts.get(ExecutionStatus.SIMULATED.value, 0),
+        rejected=counts.get(ExecutionStatus.REJECTED.value, 0),
+        no_trade=counts.get(ExecutionStatus.NOT_EXECUTED.value, 0),
+    )
+    return betting_stats(records, funnel)
 
 
 MANUAL_STRATEGY = "MANUAL"
