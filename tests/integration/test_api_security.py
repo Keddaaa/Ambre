@@ -177,10 +177,20 @@ def test_run_cycle_refused_while_a_worker_holds_the_lease(factory: sessionmaker[
     before = state(factory)
     r = client(factory).post("/control/run-cycle", json={})
     assert r.status_code == 409
+    assert r.json()["detail"] == worker_lease.WORKER_ACTIVE
     assert state(factory) == before
     with factory() as s:
         row = s.get(WorkerLeaseRow, worker_lease.LEASE_NAME)
         assert row is not None and row.holder == "host:1"  # the worker keeps its lease
+
+
+def test_run_cycle_refused_while_another_one_shot_cycle_runs(
+    factory: sessionmaker[Session],
+) -> None:
+    assert worker_lease.acquire(factory, f"{worker_lease.ONE_SHOT_PREFIX}host:1:ab", NOW, 600.0)
+    r = client(factory).post("/control/run-cycle", json={})
+    assert r.status_code == 409
+    assert r.json()["detail"] == worker_lease.CYCLE_RUNNING
 
 
 def test_run_cycle_frees_the_lease_when_done(factory: sessionmaker[Session]) -> None:

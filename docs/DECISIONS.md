@@ -185,6 +185,7 @@
 - **Contexte :** l'API n'a ni session, ni cookie, ni authentification. `POST /control/run-cycle` ne lit pas de corps : FastAPI ne contrôlait donc pas son type de contenu, et n'importe quelle page web ouverte sur la machine pouvait lancer un cycle par une requête simple (mesuré : 200). `halt`, `resume` et `orders` refusaient déjà ces requêtes (422). En revanche aucune route ne contrôlait `Host` : un DNS rebinding pouvait lire et écrire sur toutes.
 - **Décision :** (1) `WriteGuard` (`api/security.py`) s'applique à toute méthode non sûre, donc aux routes futures : `Origin` refusée si présente et hors `cors_origins` (403), `application/json` exigé (415). (2) `TrustedHostMiddleware` sur toutes les requêtes, `api_allowed_hosts` = `localhost`, `127.0.0.1` (400). (3) `/control/run-cycle` et `ambre cycle` prennent le bail du worker : 409 ou code 3 si un cycle tourne.
 - **Compromis :** pas de jeton : le dashboard appelle l'API depuis le navigateur, et un jeton public dans le bundle ne protégerait rien. **Limite :** tout processus local peut encore écrire. L'API doit rester sur `127.0.0.1` ; l'exposer exige une vraie authentification.
+- **Précision du 2026-11-05 :** le worker garde son bail pendant qu'il dort, donc un cycle manuel est refusé tant qu'il tourne. Ce refus est conservé : libérer le bail laisserait un cycle manuel retarder le réveil du worker. Le 409 dit désormais si le blocage vient d'un worker actif ou d'un autre cycle.
 
 ## ADR-021 — Invalidation tracée des liens marché / article
 

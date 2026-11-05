@@ -31,4 +31,4 @@ FastAPI, `src/ambre/api/app.py`. Schémas dans `api/schemas.py`, miroir TypeScri
 | POST | `/control/run-cycle` | Lance un cycle papier sur les données déjà stockées (aucun appel Manifold) |
 | POST | `/orders` | Mise papier manuelle (`market_id`, `side`, `probability`, `stake`, `actor` USER ou CLAUDE, `request_id`, `note`). Le risk engine plafonne ou refuse ; un refus est journalisé (`REJECTED`) |
 
-Toute écriture exige `Content-Type: application/json` (415), et une `Origin` présente doit figurer dans `CORS_ORIGINS` (403). Toute requête doit porter un `Host` de `API_ALLOWED_HOSTS` (400). `/control/run-cycle` répond 409 quand un cycle tourne déjà. Il n'y a pas d'authentification : l'API doit rester sur `127.0.0.1` (ADR-020).
+Toute écriture exige `Content-Type: application/json` (415), et une `Origin` présente doit figurer dans `CORS_ORIGINS` (403). Toute requête doit porter un `Host` de `API_ALLOWED_HOSTS` (400). `/control/run-cycle` répond 409 quand un cycle tourne déjà ou qu'un worker est actif, même entre deux cycles ; le `detail` dit lequel. Il n'y a pas d'authentification : l'API doit rester sur `127.0.0.1` (ADR-020).

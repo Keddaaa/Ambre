@@ -33,6 +33,10 @@ LEASE_NAME = "worker"
 ONE_SHOT_TTL_SECONDS = 900.0
 CLEAN_STOP = "stopped (signal or Ctrl-C)"
 INTERRUPTED = "interrupted: the process ended without a clean stop"
+ONE_SHOT_PREFIX = "one-shot:"
+# The dashboard recognizes these two texts (apps/dashboard/lib/run-cycle.ts).
+WORKER_ACTIVE = "a worker is active on this database and runs the cycles itself"
+CYCLE_RUNNING = "a cycle is already running on this database"
 
 
 def lease_ttl_seconds(interval: float) -> float:
@@ -104,14 +108,23 @@ class LeaseBusy(Exception):
     """A worker or another one-shot cycle is running on this database."""
 
 
+def busy_reason(factory: sessionmaker[Session], name: str = LEASE_NAME) -> str:
+    """Who blocks a one-shot cycle. A worker holds the lease even while it sleeps between cycles."""
+    with factory() as s:
+        row = s.get(WorkerLeaseRow, name)
+        if row is None or row.holder.startswith(ONE_SHOT_PREFIX):
+            return CYCLE_RUNNING
+        return WORKER_ACTIVE
+
+
 @contextmanager
 def exclusive(
     factory: sessionmaker[Session], now: datetime, ttl: float = ONE_SHOT_TTL_SECONDS
 ) -> Iterator[None]:
     """Hold the worker's lease for a single cycle started outside the worker loop."""
-    holder = f"one-shot:{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:8]}"
+    holder = f"{ONE_SHOT_PREFIX}{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:8]}"
     if not acquire(factory, holder, now, ttl):
-        raise LeaseBusy("a cycle is already running on this database")
+        raise LeaseBusy(busy_reason(factory))
     try:
         yield
     finally:
