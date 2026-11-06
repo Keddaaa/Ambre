@@ -155,3 +155,12 @@ def test_analysis_is_deterministic_and_does_not_invent_a_subject() -> None:
     q = "Will the high temperature in New York City exceed 90°F on July 4, 2027?"
     assert analyze(q) == analyze(q)
     assert analyze(q).subject == q.rstrip("?")
+
+
+def test_a_date_can_name_its_weekday() -> None:
+    """Seen on the Paris-Montsouris series: no period, so no forecast was ever requested."""
+    a = analyze("Will Paris-Montsouris record at least 1 mm of rain on Thursday, November 5, 2026?")
+    assert a.period is not None
+    assert a.period.kind is PeriodKind.ON
+    assert a.period.start == a.period.end == date(2026, 11, 5)
+    assert analyze("Will X happen by Friday, December 31, 2027?").period is not None

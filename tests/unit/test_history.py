@@ -3,7 +3,13 @@ from typing import Any
 
 import pytest
 
-from ambre.evaluation_engine.history import history_from_bets, price_at
+from ambre.evaluation_engine.history import (
+    BetEvent,
+    bet_events,
+    history_from_bets,
+    history_from_events,
+    price_at,
+)
 
 T0 = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
 
@@ -66,15 +72,92 @@ def test_input_order_does_not_matter() -> None:
     assert forward == backward
 
 
-def test_cancelled_and_redemption_bets_do_not_move_the_price() -> None:
+def test_unfilled_cancelled_orders_and_redemptions_do_not_move_the_price() -> None:
     noisy = [
         *BETS,
-        bet("c1", T0 + timedelta(hours=6), 0.40, 0.99, cancelled=True),
-        bet("r1", T0 + timedelta(hours=7), 0.40, 0.40, redemption=True),
+        bet("c1", T0 + timedelta(days=3), 0.70, 0.70, cancelled=True),
+        bet("r1", T0 + timedelta(days=3, hours=1), 0.70, 0.70, redemption=True),
     ]
     h = history_from_bets("m1", noisy, complete=True)
-    assert price_at(h, T0 + timedelta(hours=8)) == 0.40
+    assert price_at(h, T0 + timedelta(days=4)) == 0.70
     assert len(h.points) == 3
+
+
+def test_a_cancelled_order_that_was_partly_filled_did_move_the_price() -> None:
+    """Seen on chlzpuPE2n: a limit order bought 0.16 -> 0.98, then its remainder was cancelled."""
+    h = history_from_bets(
+        "m1",
+        [*BETS, bet("c1", T0 + timedelta(days=3), 0.70, 0.98, cancelled=True)],
+        complete=True,
+    )
+    assert price_at(h, T0 + timedelta(days=4)) == 0.98
+
+
+def event(raw: dict[str, Any]) -> BetEvent:
+    events, dropped = bet_events([raw])
+    assert dropped == 0 and len(events) == 1
+    return events[0]
+
+
+def test_a_market_order_counts_its_whole_amount() -> None:
+    raw = bet("b", T0, 0.5, 0.6) | {"amount": 10.0, "userId": "u1", "isApi": True}
+    e = event(raw)
+    assert (e.amount, e.is_api, e.prob_before, e.prob_after) == (10.0, True, 0.5, 0.6)
+    assert e.bettor is not None and "u1" not in e.bettor
+
+
+def test_only_the_fills_of_the_bets_own_instant_count_as_its_volume() -> None:
+    """``amount`` is a final value: a resting order keeps filling after it was placed."""
+    raw = bet("b", T0, 0.5, 0.5) | {
+        "amount": 30.0,
+        "limitProb": 0.5,
+        "fills": [
+            {"amount": 10.0, "timestamp": ms(T0)},
+            {"amount": 20.0, "timestamp": ms(T0 + timedelta(days=2))},
+        ],
+    }
+    assert event(raw).amount == 10.0
+
+
+def test_a_sale_counts_as_traded_volume() -> None:
+    raw = bet("b", T0, 0.5, 0.4) | {
+        "amount": -8.0,
+        "fills": [{"amount": -8.0, "timestamp": ms(T0)}],
+    }
+    assert event(raw).amount == 8.0
+
+
+def test_a_limit_order_without_fill_data_has_an_unknown_amount_not_zero() -> None:
+    raw = bet("b", T0, 0.5, 0.5) | {"amount": 30.0, "limitProb": 0.5}
+    assert event(raw).amount is None
+
+
+def test_a_resting_order_with_an_empty_fill_list_traded_nothing() -> None:
+    raw = bet("b", T0, 0.5, 0.5) | {"amount": 30.0, "limitProb": 0.5, "fills": []}
+    assert event(raw).amount == 0.0
+
+
+def test_events_follow_the_same_filter_as_the_prices() -> None:
+    raws = [
+        *BETS,
+        bet("c0", T0 + timedelta(days=3), 0.70, 0.70, cancelled=True),
+        bet("c1", T0 + timedelta(days=3), 0.70, 0.98, cancelled=True),
+        bet("r1", T0 + timedelta(days=4), 0.98, 0.98, redemption=True),
+        "not a bet",
+    ]
+    events, dropped = bet_events(raws)
+    h = history_from_bets("m1", raws, complete=True)
+    assert dropped == 1 == h.dropped
+    assert [e.bet_id for e in events] == [p.bet_id for p in h.points]
+    assert history_from_events("m1", events, complete=True, dropped=dropped) == h
+
+
+def test_the_same_bettor_keeps_the_same_anonymous_key() -> None:
+    a = event(bet("a", T0, 0.5, 0.6) | {"userId": "u1"})
+    b = event(bet("b", T0, 0.5, 0.6) | {"userId": "u1"})
+    c = event(bet("c", T0, 0.5, 0.6) | {"userId": "u2"})
+    assert a.bettor == b.bettor != c.bettor
+    assert event(bet("d", T0, 0.5, 0.6)).bettor is None
 
 
 def test_an_incomplete_history_gives_no_price_rather_than_a_guess() -> None:

@@ -28,7 +28,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from ambre.cognitive.vault import export_markdown
 from ambre.config.settings import Settings
-from ambre.data_engine.history_fetch import fetch_histories, load_resolved_universe
+from ambre.data_engine.history_fetch import (
+    fetch_histories,
+    fetch_market_bets,
+    load_resolved_universe,
+)
 from ambre.data_engine.sync import MarketSyncService, SyncReport
 from ambre.evaluation_engine.backtest import run_backtest
 from ambre.evaluation_engine.forward import evaluate_forward
@@ -37,6 +41,8 @@ from ambre.evaluation_engine.historical import (
     build_observations,
     evaluate_historical,
 )
+from ambre.evaluation_engine.history_audit import audit_history
+from ambre.evaluation_engine.learning import LearningConfig, run_learning
 from ambre.execution_engine.executor import ExecutionModeNotAvailable
 from ambre.infrastructure import repositories as repo
 from ambre.infrastructure import worker_lease
@@ -537,6 +543,29 @@ def history_fetch(
     return asyncio.run(_run())
 
 
+def history_bets(
+    settings: Settings,
+    factory: sessionmaker[Session],
+    client_factory: ClientFactory,
+    clock: Clock,
+    limit: int,
+    max_pages: int,
+) -> dict[str, Any]:
+    """Store the bet-level history of resolved markets without one (read-only GETs, ADR-022)."""
+
+    async def _run() -> dict[str, Any]:
+        client = client_factory(settings)
+        try:
+            report = await fetch_market_bets(
+                client, factory, clock, limit=limit, max_pages=max_pages
+            )
+        finally:
+            await client.aclose()
+        return asdict(report)
+
+    return asyncio.run(_run())
+
+
 def history_universe(
     settings: Settings,
     client_factory: ClientFactory,
@@ -616,6 +645,28 @@ def history_eval(
     return report
 
 
+def history_audit(factory: sessionmaker[Session]) -> dict[str, Any]:
+    """Audit of the bet-level history (read-only; writes nothing)."""
+    with factory() as session:
+        return asdict(
+            audit_history(
+                repo.bet_level_markets(session),
+                repo.former_price_points(session),
+                repo.live_snapshots(session),
+            )
+        )
+
+
+def history_learn(
+    factory: sessionmaker[Session], settings: Settings | None = None
+) -> dict[str, Any]:
+    """The ADR-022 protocol on the bet-level history (read-only; writes nothing)."""
+    cfg = (settings or Settings()).prediction
+    with factory() as session:
+        markets = repo.bet_level_markets(session)
+    return asdict(run_learning(markets, LearningConfig(), cfg))
+
+
 def backtest(factory: sessionmaker[Session], settings: Settings | None = None) -> dict[str, Any]:
     """Walk-forward backtest of the base-rate baseline on resolved markets (read-only)."""
     cfg = (settings or Settings()).prediction
@@ -666,6 +717,11 @@ def _parser() -> argparse.ArgumentParser:
     hist = sub.add_parser("history-fetch", help="fetch the bet history of resolved markets (GET)")
     hist.add_argument("--limit", type=int, default=100)
     hist.add_argument("--max-pages", type=int, default=30)
+    hbets = sub.add_parser("history-bets", help="store the bets of resolved markets (GET, ADR-022)")
+    hbets.add_argument("--limit", type=int, default=100)
+    hbets.add_argument("--max-pages", type=int, default=30)
+    sub.add_parser("history-audit", help="audit the bet-level history (ADR-022)")
+    sub.add_parser("history-learn", help="the pre-registered learning protocol (ADR-022)")
     uni = sub.add_parser("history-universe", help="load resolved markets sampled across time (GET)")
     uni.add_argument("--since", default="2023-01-01", help="oldest creation date, YYYY-MM-DD")
     uni.add_argument("--stride-days", type=int, default=60)
@@ -759,6 +815,17 @@ def main(
             _emit(
                 history_fetch(settings, factory, client_factory, clock, args.limit, args.max_pages)
             )
+            return 0
+        if args.command == "history-bets":
+            _emit(
+                history_bets(settings, factory, client_factory, clock, args.limit, args.max_pages)
+            )
+            return 0
+        if args.command == "history-audit":
+            _emit(history_audit(factory))
+            return 0
+        if args.command == "history-learn":
+            _emit(history_learn(factory, settings))
             return 0
         if args.command == "history-universe":
             since = datetime.fromisoformat(args.since).replace(tzinfo=UTC)

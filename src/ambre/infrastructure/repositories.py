@@ -1,6 +1,7 @@
 """Query-only repositories. They flush but never commit: callers own the transaction."""
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
@@ -11,11 +12,14 @@ from ambre.domain.models import BinaryMarket, MarketSnapshot, SimulationStatus
 from ambre.evaluation_engine.backtest import BacktestMarket
 from ambre.evaluation_engine.forward import ForwardObservation
 from ambre.evaluation_engine.historical import HistoricalMarket
-from ambre.evaluation_engine.history import PriceHistory, PricePoint
+from ambre.evaluation_engine.history import BetEvent, BetLevelMarket, PriceHistory, PricePoint
+from ambre.evaluation_engine.history_audit import LiveSnapshot
 from ambre.infrastructure.orm import (
     ControlStateRow,
     DecisionRow,
     IgnoredMarketRow,
+    MarketBetRow,
+    MarketBetStateRow,
     MarketRow,
     PortfolioSnapshotRow,
     PositionRow,
@@ -503,6 +507,133 @@ def historical_markets(session: Session) -> list[HistoricalMarket]:
             )
         )
     return out
+
+
+def markets_needing_bets(session: Session, limit: int) -> list[str]:
+    """Resolved YES/NO markets without a bet-level read, the most recently resolved first."""
+    stmt = (
+        select(MarketRow.id)
+        .outerjoin(MarketBetStateRow, MarketBetStateRow.market_id == MarketRow.id)
+        .where(
+            MarketRow.resolution.in_(("YES", "NO")),
+            MarketRow.resolution_at.is_not(None),
+            MarketBetStateRow.market_id.is_(None),
+        )
+        .order_by(MarketRow.resolution_at.desc(), MarketRow.id)
+        .limit(limit)
+    )
+    return list(session.scalars(stmt))
+
+
+def save_market_bets(
+    session: Session,
+    market_id: str,
+    events: Sequence[BetEvent],
+    complete: bool,
+    bet_count: int,
+    dropped: int,
+    now: datetime,
+) -> None:
+    """Store a bet-level read. Saving a market again replaces it: the call is idempotent."""
+    session.execute(delete(MarketBetRow).where(MarketBetRow.market_id == market_id))
+    existing = session.get(MarketBetStateRow, market_id)
+    if existing is not None:
+        session.delete(existing)
+    session.flush()
+    session.add(
+        MarketBetStateRow(
+            market_id=market_id,
+            complete=complete,
+            bet_count=bet_count,
+            dropped=dropped,
+            fetched_at=now,
+        )
+    )
+    session.add_all(
+        MarketBetRow(
+            market_id=market_id,
+            bet_id=e.bet_id,
+            at=e.at,
+            prob_before=e.prob_before,
+            prob_after=e.prob_after,
+            amount=e.amount,
+            bettor=e.bettor,
+            is_api=e.is_api,
+        )
+        for e in events
+    )
+    session.flush()
+
+
+def bet_level_markets(session: Session) -> list[BetLevelMarket]:
+    """Resolved YES/NO markets with a bet-level read, each with its bets, oldest first."""
+    rows = session.execute(
+        select(MarketRow, MarketBetStateRow)
+        .join(MarketBetStateRow, MarketBetStateRow.market_id == MarketRow.id)
+        .where(MarketRow.resolution.in_(("YES", "NO")), MarketRow.resolution_at.is_not(None))
+        .order_by(MarketRow.resolution_at, MarketRow.id)
+    ).all()
+    events: dict[str, list[BetEvent]] = {}
+    for b in session.scalars(
+        select(MarketBetRow).order_by(MarketBetRow.market_id, MarketBetRow.at, MarketBetRow.bet_id)
+    ):
+        events.setdefault(b.market_id, []).append(
+            BetEvent(b.bet_id, b.at, b.prob_before, b.prob_after, b.amount, b.bettor, b.is_api)
+        )
+    out: list[BetLevelMarket] = []
+    for market, state in rows:
+        assert market.resolution_at is not None
+        out.append(
+            BetLevelMarket(
+                market_id=market.id,
+                question=market.question,
+                creator_id=market.creator_id,
+                created_at=market.created_at,
+                close_at=market.close_at,
+                resolution_at=market.resolution_at,
+                outcome=market.resolution == "YES",
+                complete=state.complete,
+                bet_count=state.bet_count,
+                dropped=state.dropped,
+                fetched_at=state.fetched_at,
+                events=tuple(events.get(market.id, [])),
+                final_probability=_raw_probability(market.raw),
+            )
+        )
+    return out
+
+
+def former_price_points(
+    session: Session,
+) -> dict[str, tuple[float | None, tuple[PricePoint, ...]]]:
+    """The points ADR-018 used: opening price and points of every stored market."""
+    points: dict[str, list[PricePoint]] = {}
+    for p in session.scalars(
+        select(PricePointRow).order_by(PricePointRow.market_id, PricePointRow.at)
+    ):
+        points.setdefault(p.market_id, []).append(PricePoint(p.at, p.probability, p.bet_id))
+    return {
+        s.market_id: (s.initial_probability, tuple(points.get(s.market_id, [])))
+        for s in session.scalars(select(PriceHistoryStateRow))
+    }
+
+
+def live_snapshots(session: Session) -> list[LiveSnapshot]:
+    """Prices recorded live, stamped with Manifold's own update time when it gave one."""
+    rows = session.execute(
+        select(
+            SnapshotRow.market_id,
+            SnapshotRow.event_at,
+            SnapshotRow.observed_at,
+            SnapshotRow.probability,
+        )
+    ).all()
+    return [LiveSnapshot(m, event_at or observed_at, p) for m, event_at, observed_at, p in rows]
+
+
+def _raw_probability(raw: dict[str, Any]) -> float | None:
+    value = raw.get("probability")
+    return float(value) if isinstance(value, int | float) else None
 
 
 def forward_observations(
