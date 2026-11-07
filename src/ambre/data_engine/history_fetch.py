@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from ambre.evaluation_engine.history import history_from_bets
+from ambre.evaluation_engine.history import bet_events, history_from_bets
 from ambre.infrastructure import repositories as repo
 from ambre.integrations.manifold.client import MAX_LIST_LIMIT, ManifoldClient, ManifoldError
 from ambre.integrations.manifold.mapping import MappedMarket, map_market
@@ -87,6 +87,42 @@ async def fetch_histories(
             report.complete += 1
         else:
             report.incomplete += 1
+    return report
+
+
+async def fetch_market_bets(
+    client: ManifoldClient,
+    factory: sessionmaker[Session],
+    clock: Callable[[], datetime],
+    *,
+    limit: int,
+    max_pages: int = DEFAULT_MAX_PAGES,
+) -> HistoryFetchReport:
+    """Store the bet-level history of resolved markets (ADR-022). One market per transaction, and
+    a rerun resumes. ``market_price_points`` is not touched: ADR-018 stays reproducible."""
+    report = HistoryFetchReport()
+    with factory() as session:
+        market_ids = repo.markets_needing_bets(session, limit)
+    report.requested = len(market_ids)
+    for done, market_id in enumerate(market_ids, start=1):
+        try:
+            bets, complete, pages = await fetch_bet_history(client, market_id, max_pages=max_pages)
+        except ManifoldError as exc:  # includes ManifoldUnavailable: skip this market, go on
+            logger.warning("bets of %s not fetched: %s", market_id, exc)
+            report.failed.append({"market_id": market_id, "reason": str(exc)})
+            continue
+        report.requests += pages
+        report.bets += len(bets)
+        events, dropped = bet_events(bets)
+        with factory() as session:
+            repo.save_market_bets(session, market_id, events, complete, len(bets), dropped, clock())
+            session.commit()
+        if complete:
+            report.complete += 1
+        else:
+            report.incomplete += 1
+        if done % 250 == 0:
+            logger.info("bets read for %d of %d markets", done, len(market_ids))
     return report
 
 

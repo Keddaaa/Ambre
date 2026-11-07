@@ -222,6 +222,34 @@ class PricePointRow(Base):
     probability: Mapped[float] = mapped_column(Float)
 
 
+class MarketBetStateRow(Base):
+    """A market's bet-level read (ADR-022). Incomplete reads are kept but never used."""
+
+    __tablename__ = "market_bet_state"
+
+    market_id: Mapped[str] = mapped_column(String, ForeignKey("markets.id"), primary_key=True)
+    complete: Mapped[bool] = mapped_column(Boolean)
+    bet_count: Mapped[int] = mapped_column(Integer)
+    dropped: Mapped[int] = mapped_column(Integer)
+    fetched_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class MarketBetRow(Base):
+    """One bet as known at its own instant (``BetEvent``). ``bettor`` is an anonymous key."""
+
+    __tablename__ = "market_bets"
+    __table_args__ = (Index("ix_market_bets_market_at", "market_id", "at"),)
+
+    market_id: Mapped[str] = mapped_column(String, ForeignKey("markets.id"), primary_key=True)
+    bet_id: Mapped[str] = mapped_column(String, primary_key=True)
+    at: Mapped[datetime] = mapped_column(UTCDateTime)
+    prob_before: Mapped[float] = mapped_column(Float)
+    prob_after: Mapped[float] = mapped_column(Float)
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bettor: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_api: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
 class WorkerLeaseRow(Base):
     """The single lease a worker must hold to run on this database (see ``worker_lease``)."""
 
