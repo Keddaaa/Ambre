@@ -216,8 +216,9 @@ _MONTHS = {name.lower(): i for i, name in enumerate(calendar.month_name) if name
 _MONTHS.update({name.lower(): i for i, name in enumerate(calendar.month_abbr) if name})
 _MONTH_RE = "|".join(sorted(_MONTHS, key=len, reverse=True))
 _PREP = r"(?P<prep>on|by|before|until|through|no later than)"
+_WEEKDAY_RE = "|".join(name.lower() for name in calendar.day_name)
 _FULL_DATE = re.compile(
-    rf"\b{_PREP}\s+(?P<m>{_MONTH_RE})\.?\s+(?P<d>\d{{1,2}})(?:st|nd|rd|th)?(?:,?\s+(?P<y>(?:19|20)\d{{2}}))?\b",
+    rf"\b{_PREP}\s+(?:(?:{_WEEKDAY_RE}),?\s+)?(?P<m>{_MONTH_RE})\.?\s+(?P<d>\d{{1,2}})(?:st|nd|rd|th)?(?:,?\s+(?P<y>(?:19|20)\d{{2}}))?\b",
     re.I,
 )
 _ISO_DATE = re.compile(
